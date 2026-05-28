@@ -75,11 +75,15 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { title: "Questão de Sucesso — Gerador de Ebooks de Questões" },
       { name: "description", content: "Cadastre temas, subtemas e questões de concurso por níveis e exporte ebooks em DOCX ou PDF." },
       { name: "author", content: "Questão de Sucesso" },
-      { property: "og:title", content: "Questão de Sucesso" },
-      { property: "og:description", content: "Estude por questões. Aprenda na prática. Seja aprovado." },
+      { property: "og:title", content: "Questão de Sucesso — Gerador de Ebooks de Questões" },
+      { property: "og:description", content: "Cadastre temas, subtemas e questões de concurso por níveis e exporte ebooks em DOCX ou PDF." },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
       { name: "twitter:site", content: "@Lovable" },
+      { name: "twitter:title", content: "Questão de Sucesso — Gerador de Ebooks de Questões" },
+      { name: "twitter:description", content: "Cadastre temas, subtemas e questões de concurso por níveis e exporte ebooks em DOCX ou PDF." },
+      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/8b90443a-3dad-43db-b14d-6f486f8eff10/id-preview-4d21935f--37b1edff-54c5-4d6e-a3bb-ce8904270dbf.lovable.app-1780011730684.png" },
+      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/8b90443a-3dad-43db-b14d-6f486f8eff10/id-preview-4d21935f--37b1edff-54c5-4d6e-a3bb-ce8904270dbf.lovable.app-1780011730684.png" },
     ],
     links: [
       {
