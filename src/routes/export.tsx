@@ -55,7 +55,7 @@ function ExportPage() {
     try {
       const opts = { title: title.trim() || "Caderno de Questões", questions: questions.data as any, includeAnswers };
       if (format === "docx") await exportDocx(opts);
-      else exportPdf(opts);
+      else await exportPdf(opts);
       toast.success(`Arquivo ${format.toUpperCase()} gerado!`);
     } catch (e: any) {
       toast.error(e.message);
