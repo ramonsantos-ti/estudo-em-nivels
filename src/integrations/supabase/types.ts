@@ -14,7 +14,140 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      questions: {
+        Row: {
+          alt_a: string
+          alt_b: string
+          alt_c: string
+          alt_d: string
+          alt_e: string
+          command: string
+          correct: string
+          created_at: string
+          exp_a: string | null
+          exp_b: string | null
+          exp_c: string | null
+          exp_d: string | null
+          exp_e: string | null
+          id: string
+          intro: string | null
+          level: number
+          number: number | null
+          subtheme_id: string | null
+          theme_id: string
+        }
+        Insert: {
+          alt_a: string
+          alt_b: string
+          alt_c: string
+          alt_d: string
+          alt_e: string
+          command: string
+          correct: string
+          created_at?: string
+          exp_a?: string | null
+          exp_b?: string | null
+          exp_c?: string | null
+          exp_d?: string | null
+          exp_e?: string | null
+          id?: string
+          intro?: string | null
+          level: number
+          number?: number | null
+          subtheme_id?: string | null
+          theme_id: string
+        }
+        Update: {
+          alt_a?: string
+          alt_b?: string
+          alt_c?: string
+          alt_d?: string
+          alt_e?: string
+          command?: string
+          correct?: string
+          created_at?: string
+          exp_a?: string | null
+          exp_b?: string | null
+          exp_c?: string | null
+          exp_d?: string | null
+          exp_e?: string | null
+          id?: string
+          intro?: string | null
+          level?: number
+          number?: number | null
+          subtheme_id?: string | null
+          theme_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "questions_subtheme_id_fkey"
+            columns: ["subtheme_id"]
+            isOneToOne: false
+            referencedRelation: "subthemes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "questions_theme_id_fkey"
+            columns: ["theme_id"]
+            isOneToOne: false
+            referencedRelation: "themes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      subthemes: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          theme_id: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          theme_id: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          theme_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "subthemes_theme_id_fkey"
+            columns: ["theme_id"]
+            isOneToOne: false
+            referencedRelation: "themes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      themes: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
