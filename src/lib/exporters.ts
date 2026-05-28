@@ -7,6 +7,13 @@ import {
   AlignmentType,
   PageBreak,
   BorderStyle,
+  Header,
+  ImageRun,
+  HorizontalPositionRelativeFrom,
+  VerticalPositionRelativeFrom,
+  HorizontalPositionAlign,
+  VerticalPositionAlign,
+  TextWrappingType,
 } from "docx";
 import pkg from "file-saver";
 const { saveAs } = pkg;
@@ -35,6 +42,23 @@ export type QuestionRow = {
 
 const NAVY = "0B1E4D";
 const GOLD = "F2C300";
+
+const BG_QUESTAO_URL = "/templates/bg-questao.png";
+const BG_GABARITO_URL = "/templates/bg-gabarito.png";
+
+async function loadAsBase64(url: string): Promise<string> {
+  const res = await fetch(url);
+  const buf = await res.arrayBuffer();
+  let binary = "";
+  const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+
+async function loadAsUint8(url: string): Promise<Uint8Array> {
+  const res = await fetch(url);
+  return new Uint8Array(await res.arrayBuffer());
+}
 
 function letterAlternatives(q: QuestionRow) {
   return [
