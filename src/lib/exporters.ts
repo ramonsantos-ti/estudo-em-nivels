@@ -206,8 +206,8 @@ export async function exportDocx(opts: {
     });
   }
 
+  const answerChildren: Paragraph[] = [];
   if (includeAnswers) {
-    const answerChildren: Paragraph[] = [];
     questions.forEach((q, idx) => {
       const num = q.number ?? idx + 1;
       answerChildren.push(
@@ -238,7 +238,6 @@ export async function exportDocx(opts: {
         );
       });
     });
-    (exportDocx as any)._answerChildren = answerChildren;
   }
 
   const doc = new Document({
