@@ -8,7 +8,8 @@ import {
   PageBreak,
   BorderStyle,
 } from "docx";
-import { saveAs } from "file-saver";
+import pkg from "file-saver";
+const { saveAs } = pkg;
 import jsPDF from "jspdf";
 
 export type QuestionRow = {
