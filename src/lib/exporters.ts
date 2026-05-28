@@ -79,6 +79,39 @@ export async function exportDocx(opts: {
 }) {
   const { title, questions, includeAnswers } = opts;
 
+  const [bgQuestao, bgGabarito] = await Promise.all([
+    loadAsUint8(BG_QUESTAO_URL),
+    loadAsUint8(BG_GABARITO_URL),
+  ]);
+
+  function bgHeader(data: Uint8Array): Header {
+    return new Header({
+      children: [
+        new Paragraph({
+          children: [
+            new ImageRun({
+              type: "png",
+              data,
+              transformation: { width: 595, height: 842 },
+              floating: {
+                horizontalPosition: {
+                  relative: HorizontalPositionRelativeFrom.PAGE,
+                  offset: 0,
+                },
+                verticalPosition: {
+                  relative: VerticalPositionRelativeFrom.PAGE,
+                  offset: 0,
+                },
+                behindDocument: true,
+                wrap: { type: TextWrappingType.NONE },
+              },
+            }),
+          ],
+        }),
+      ],
+    });
+  }
+
   const children: Paragraph[] = [];
 
   children.push(
@@ -174,19 +207,9 @@ export async function exportDocx(opts: {
   }
 
   if (includeAnswers) {
-    children.push(new Paragraph({ children: [new PageBreak()] }));
-    children.push(
-      new Paragraph({
-        heading: HeadingLevel.HEADING_1,
-        alignment: AlignmentType.CENTER,
-        spacing: { after: 360 },
-        children: [new TextRun({ text: "GABARITO COMENTADO", bold: true, size: 40, color: NAVY })],
-      }),
-    );
-
     questions.forEach((q, idx) => {
       const num = q.number ?? idx + 1;
-      children.push(
+      answerChildren.push(
         new Paragraph({
           spacing: { before: 240, after: 80 },
           children: [
@@ -197,7 +220,7 @@ export async function exportDocx(opts: {
       );
       letterAlternatives(q).forEach((alt) => {
         const isCorrect = alt.letter === q.correct;
-        children.push(
+        answerChildren.push(
           new Paragraph({
             spacing: { after: 80 },
             indent: { left: 360 },
@@ -225,12 +248,22 @@ export async function exportDocx(opts: {
     sections: [
       {
         properties: {
-          page: {
-            margin: { top: 1080, bottom: 1080, left: 1080, right: 1080 },
-          },
+          page: { margin: { top: 2400, bottom: 1400, left: 1200, right: 1200 } },
         },
+        headers: { default: bgHeader(bgQuestao) },
         children,
       },
+      ...(includeAnswers
+        ? [
+            {
+              properties: {
+                page: { margin: { top: 2400, bottom: 1400, left: 1200, right: 1200 } },
+              },
+              headers: { default: bgHeader(bgGabarito) },
+              children: answerChildren,
+            },
+          ]
+        : []),
     ],
   });
 
