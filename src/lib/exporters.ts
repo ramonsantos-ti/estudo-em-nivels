@@ -274,7 +274,7 @@ export async function exportDocx(opts: {
 
 /* ============================ PDF ============================ */
 
-export function exportPdf(opts: {
+export async function exportPdf(opts: {
   title: string;
   questions: QuestionRow[];
   includeAnswers: boolean;
@@ -283,29 +283,35 @@ export function exportPdf(opts: {
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
-  const margin = 48;
+  const margin = 56;
+  const topMargin = 140;   // below the navy banner
+  const bottomMargin = 90; // above the navy footer
   const contentW = pageW - margin * 2;
-  let y = margin;
+  let y = topMargin;
+  let currentBg: "questao" | "gabarito" | null = null;
+
+  const [bgQuestao, bgGabarito] = await Promise.all([
+    loadAsBase64(BG_QUESTAO_URL),
+    loadAsBase64(BG_GABARITO_URL),
+  ]);
 
   const navy: [number, number, number] = [11, 30, 77];
   const gold: [number, number, number] = [242, 195, 0];
   const green: [number, number, number] = [27, 127, 59];
   const red: [number, number, number] = [192, 57, 43];
 
+  function drawBackground() {
+    if (!currentBg) return;
+    const data = currentBg === "questao" ? bgQuestao : bgGabarito;
+    doc.addImage(`data:image/png;base64,${data}`, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
+  }
   function newPage() {
     doc.addPage();
-    y = margin;
-    drawHeaderBar();
+    drawBackground();
+    y = topMargin;
   }
   function ensure(h: number) {
-    if (y + h > pageH - margin) newPage();
-  }
-  function drawHeaderBar() {
-    doc.setFillColor(...navy);
-    doc.rect(0, 0, pageW, 24, "F");
-    doc.setFillColor(...gold);
-    doc.rect(0, 24, pageW, 3, "F");
-    y = Math.max(y, 44);
+    if (y + h > pageH - bottomMargin) newPage();
   }
   function text(t: string, opts: { size?: number; bold?: boolean; color?: [number, number, number]; indent?: number } = {}) {
     const { size = 11, bold = false, color = [30, 30, 30], indent = 0 } = opts;
@@ -320,33 +326,20 @@ export function exportPdf(opts: {
     }
   }
 
-  // Cover
-  drawHeaderBar();
-  y = pageH / 2 - 80;
+  // Cover (uses the QUESTÃO background as a hero)
+  currentBg = "questao";
+  drawBackground();
+  y = pageH / 2 + 40;
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(28);
-  doc.setTextColor(...navy);
-  doc.text("QUESTÃO DE SUCESSO", pageW / 2, y, { align: "center" });
-  y += 30;
-  doc.setFontSize(12);
-  doc.setFont("helvetica", "italic");
-  doc.setTextColor(80, 80, 80);
-  doc.text("Questões comentadas para concursos", pageW / 2, y, { align: "center" });
-  y += 60;
-  doc.setFontSize(20);
-  doc.setFont("helvetica", "bold");
+  doc.setFontSize(26);
   doc.setTextColor(...navy);
   doc.text(title, pageW / 2, y, { align: "center", maxWidth: contentW });
-  y += 40;
-  doc.setFontSize(11);
-  doc.setFont("helvetica", "italic");
-  doc.setTextColor(80, 80, 80);
-  doc.text("Resolva primeiro. Entenda depois. Evolua sempre.", pageW / 2, y, { align: "center" });
 
   // Questions by level
   for (const lv of [1, 2, 3, 4]) {
     const items = questions.filter((q) => q.level === lv);
     if (items.length === 0) continue;
+    currentBg = "questao";
     newPage();
     text(`NÍVEL ${lv}`, { size: 20, bold: true, color: navy });
     y += 4;
@@ -370,9 +363,8 @@ export function exportPdf(opts: {
 
   // Answer key
   if (includeAnswers) {
+    currentBg = "gabarito";
     newPage();
-    text("GABARITO COMENTADO", { size: 20, bold: true, color: navy });
-    y += 10;
     questions.forEach((q, idx) => {
       ensure(80);
       const num = q.number ?? idx + 1;
