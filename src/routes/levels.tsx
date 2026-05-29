@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Save, Trash2, UploadCloud, X } from "lucide-react";
+import { Edit, Save, Trash2, UploadCloud, X } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/levels")({
@@ -35,6 +35,7 @@ function LevelsPage() {
   const [fileName, setFileName] = useState("");
   const [viewLevel, setViewLevel] = useState("1");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const pagesQuery = useQuery({
     queryKey: LEVEL_PAGES_QUERY_KEY,
@@ -51,12 +52,25 @@ function LevelsPage() {
   const pages = pagesQuery.data ?? [];
   const visiblePages = pages.filter((page) => String(page.level) === viewLevel);
   const selected = visiblePages.find((page) => page.id === selectedId) ?? null;
+  const isEditing = Boolean(editingId);
 
   const savePage = useMutation({
     mutationFn: async () => {
       if (!pageImage) throw new Error("Envie a imagem da página do nível antes de salvar.");
       const levelNumber = Number(level);
       const pageName = name.trim() || `Página do nível ${levelNumber}`;
+
+      if (editingId) {
+        const { data, error } = await (supabase as any)
+          .from("level_pages")
+          .update({ level: levelNumber, name: pageName, page_data_url: pageImage })
+          .eq("id", editingId)
+          .select("id, level, name, page_data_url, created_at")
+          .single();
+        if (error) throw error;
+        return data as LevelPage;
+      }
+
       const { data, error } = await (supabase as any)
         .from("level_pages")
         .insert({ level: levelNumber, name: pageName, page_data_url: pageImage })
@@ -66,12 +80,15 @@ function LevelsPage() {
       return data as LevelPage;
     },
     onSuccess: async (saved) => {
-      qc.setQueryData<LevelPage[]>(LEVEL_PAGES_QUERY_KEY, (current = []) => [saved, ...current.filter((item) => item.id !== saved.id)]);
+      qc.setQueryData<LevelPage[]>(LEVEL_PAGES_QUERY_KEY, (current = []) => {
+        const withoutCurrent = current.filter((item) => item.id !== saved.id);
+        return [saved, ...withoutCurrent];
+      });
       setViewLevel(String(saved.level));
       setSelectedId(saved.id);
       clearForm();
       await qc.invalidateQueries({ queryKey: LEVEL_PAGES_QUERY_KEY });
-      toast.success("Página de nível salva");
+      toast.success(isEditing ? "Página de nível atualizada" : "Página de nível salva");
     },
     onError: (e: any) => toast.error(`Erro ao salvar página: ${e.message}`),
   });
@@ -83,7 +100,8 @@ function LevelsPage() {
     },
     onSuccess: async (_, deletedId) => {
       qc.setQueryData<LevelPage[]>(LEVEL_PAGES_QUERY_KEY, (current = []) => current.filter((item) => item.id !== deletedId));
-      setSelectedId(null);
+      if (selectedId === deletedId) setSelectedId(null);
+      if (editingId === deletedId) clearForm();
       await qc.invalidateQueries({ queryKey: LEVEL_PAGES_QUERY_KEY });
       toast.success("Página excluída");
     },
@@ -94,6 +112,19 @@ function LevelsPage() {
     setName("");
     setPageImage(null);
     setFileName("");
+    setEditingId(null);
+    setLevel("1");
+  }
+
+  function startEdit(page: LevelPage) {
+    setEditingId(page.id);
+    setSelectedId(page.id);
+    setViewLevel(String(page.level));
+    setLevel(String(page.level));
+    setName(page.name);
+    setPageImage(page.page_data_url);
+    setFileName(page.name);
+    toast.info("Dados carregados para edição. Altere as informações e clique em Salvar página.");
   }
 
   async function handleUpload(file: File | undefined) {
@@ -105,7 +136,7 @@ function LevelsPage() {
     try {
       setPageImage(await fileToCompressedDataUrl(file));
       setFileName(file.name);
-      setName(file.name.replace(/\.[^.]+$/, ""));
+      if (!name.trim()) setName(file.name.replace(/\.[^.]+$/, ""));
       toast.success("Imagem carregada. Confira a pré-visualização antes de salvar.");
     } catch (e: any) {
       toast.error(e.message || "Não foi possível carregar a imagem.");
@@ -129,9 +160,11 @@ function LevelsPage() {
         </div>
 
         <Card>
-          <CardHeader><CardTitle>Nova página de nível</CardTitle></CardHeader>
+          <CardHeader>
+            <CardTitle>{isEditing ? "Editar página de nível" : "Nova página de nível"}</CardTitle>
+          </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-[220px_1fr_auto] md:items-end">
+            <div className="grid gap-4 md:grid-cols-[220px_1fr_auto_auto] md:items-end">
               <div>
                 <Label>Nível</Label>
                 <Select value={level} onValueChange={setLevel}>
@@ -151,33 +184,35 @@ function LevelsPage() {
                   <UploadCloud className="h-4 w-4 mr-2" /> Escolher imagem
                 </Button>
               </div>
+              <Button onClick={() => savePage.mutate()} disabled={!pageImage || savePage.isPending}>
+                <Save className="h-4 w-4 mr-2" /> {savePage.isPending ? "Salvando..." : "Salvar página"}
+              </Button>
             </div>
+
+            {isEditing && (
+              <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+                Editando página cadastrada. Você pode alterar o nível, o nome e substituir a imagem antes de salvar.
+              </div>
+            )}
 
             {pageImage && (
               <div className="space-y-3 rounded-md border bg-muted/20 p-3">
                 <div className="flex items-center justify-between gap-3 text-sm">
                   <span>Imagem carregada: <strong>{fileName || name}</strong></span>
-                  <Button size="sm" variant="ghost" onClick={clearForm}><X className="h-4 w-4 mr-1" />Remover</Button>
+                  <Button size="sm" variant="ghost" onClick={clearForm}><X className="h-4 w-4 mr-1" />Cancelar/Limpar</Button>
                 </div>
                 <div className="mx-auto aspect-[1055/1491] max-h-[60vh] overflow-hidden rounded-xl border bg-muted shadow">
                   <img src={pageImage} alt="Pré-visualização da página do nível" className="h-full w-full object-fill" />
                 </div>
               </div>
             )}
-
-            <div className="flex gap-2">
-              <Button onClick={() => savePage.mutate()} disabled={!pageImage || savePage.isPending}>
-                <Save className="h-4 w-4 mr-2" /> {savePage.isPending ? "Salvando..." : "Salvar página"}
-              </Button>
-              <Button variant="outline" onClick={clearForm} disabled={!pageImage && !name}>Limpar</Button>
-            </div>
           </CardContent>
         </Card>
 
         <Card>
           <CardHeader><CardTitle>Páginas salvas por nível</CardTitle></CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-[220px_auto] md:items-end">
+            <div className="grid gap-3 md:grid-cols-[220px_auto_auto] md:items-end">
               <div>
                 <Label>Escolha o nível para visualizar</Label>
                 <Select value={viewLevel} onValueChange={(value) => { setViewLevel(value); setSelectedId(null); }}>
@@ -187,8 +222,11 @@ function LevelsPage() {
                   </SelectContent>
                 </Select>
               </div>
+              <Button variant="outline" disabled={!selected} onClick={() => selected && startEdit(selected)}>
+                <Edit className="h-4 w-4 mr-2" /> Editar selecionada
+              </Button>
               <Button variant="outline" disabled={!selected || deletePage.isPending} onClick={confirmDeleteSelected}>
-                <Trash2 className="h-4 w-4 mr-2 text-destructive" /> {deletePage.isPending ? "Excluindo..." : "Excluir página selecionada"}
+                <Trash2 className="h-4 w-4 mr-2 text-destructive" /> {deletePage.isPending ? "Excluindo..." : "Excluir selecionada"}
               </Button>
             </div>
 
@@ -207,7 +245,9 @@ function LevelsPage() {
                       key={page.id}
                       type="button"
                       onClick={() => setSelectedId(page.id)}
+                      onDoubleClick={() => startEdit(page)}
                       className={`w-32 shrink-0 rounded-md border p-2 text-left transition ${active ? "border-secondary ring-2 ring-secondary" : "border-border hover:border-primary"}`}
+                      title="Clique para selecionar. Duplo clique para editar."
                     >
                       <div className="aspect-[1055/1491] overflow-hidden rounded bg-muted">
                         <img src={page.page_data_url} alt={page.name} className="h-full w-full object-fill" />
