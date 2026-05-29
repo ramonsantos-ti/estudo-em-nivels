@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as QuestionsListRouteImport } from './routes/questions-list'
 import { Route as QuestionsRouteImport } from './routes/questions'
 import { Route as NotebooksRouteImport } from './routes/notebooks'
+import { Route as LevelsRouteImport } from './routes/levels'
 import { Route as ExportRouteImport } from './routes/export'
 import { Route as CoversRouteImport } from './routes/covers'
 import { Route as IndexRouteImport } from './routes/index'
@@ -29,6 +30,11 @@ const QuestionsRoute = QuestionsRouteImport.update({
 const NotebooksRoute = NotebooksRouteImport.update({
   id: '/notebooks',
   path: '/notebooks',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LevelsRoute = LevelsRouteImport.update({
+  id: '/levels',
+  path: '/levels',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ExportRoute = ExportRouteImport.update({
@@ -51,6 +57,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/covers': typeof CoversRoute
   '/export': typeof ExportRoute
+  '/levels': typeof LevelsRoute
   '/notebooks': typeof NotebooksRoute
   '/questions': typeof QuestionsRoute
   '/questions-list': typeof QuestionsListRoute
@@ -59,6 +66,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/covers': typeof CoversRoute
   '/export': typeof ExportRoute
+  '/levels': typeof LevelsRoute
   '/notebooks': typeof NotebooksRoute
   '/questions': typeof QuestionsRoute
   '/questions-list': typeof QuestionsListRoute
@@ -68,6 +76,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/covers': typeof CoversRoute
   '/export': typeof ExportRoute
+  '/levels': typeof LevelsRoute
   '/notebooks': typeof NotebooksRoute
   '/questions': typeof QuestionsRoute
   '/questions-list': typeof QuestionsListRoute
@@ -78,6 +87,7 @@ export interface FileRouteTypes {
     | '/'
     | '/covers'
     | '/export'
+    | '/levels'
     | '/notebooks'
     | '/questions'
     | '/questions-list'
@@ -86,6 +96,7 @@ export interface FileRouteTypes {
     | '/'
     | '/covers'
     | '/export'
+    | '/levels'
     | '/notebooks'
     | '/questions'
     | '/questions-list'
@@ -94,6 +105,7 @@ export interface FileRouteTypes {
     | '/'
     | '/covers'
     | '/export'
+    | '/levels'
     | '/notebooks'
     | '/questions'
     | '/questions-list'
@@ -103,6 +115,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CoversRoute: typeof CoversRoute
   ExportRoute: typeof ExportRoute
+  LevelsRoute: typeof LevelsRoute
   NotebooksRoute: typeof NotebooksRoute
   QuestionsRoute: typeof QuestionsRoute
   QuestionsListRoute: typeof QuestionsListRoute
@@ -110,6 +123,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/levels': {
+      id: '/levels'
+      path: '/levels'
+      fullPath: '/levels'
+      preLoaderRoute: typeof LevelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/questions-list': {
       id: '/questions-list'
       path: '/questions-list'
@@ -159,6 +179,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CoversRoute: CoversRoute,
   ExportRoute: ExportRoute,
+  LevelsRoute: LevelsRoute,
   NotebooksRoute: NotebooksRoute,
   QuestionsRoute: QuestionsRoute,
   QuestionsListRoute: QuestionsListRoute,
