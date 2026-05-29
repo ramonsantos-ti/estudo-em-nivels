@@ -42,19 +42,48 @@ const PDF_SAFE_QUESTION = { top: 126, bottom: 72, left: 42, right: 42 };
 const PDF_SAFE_ANSWER = { top: 126, bottom: 72, left: 42, right: 42 };
 
 type BackgroundKind = "questao" | "gabarito";
+type ImageType = "png" | "jpg";
 
-async function loadAsBase64(url: string): Promise<string> {
-  const res = await fetch(url);
-  const buf = await res.arrayBuffer();
-  let binary = "";
-  const bytes = new Uint8Array(buf);
-  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-  return btoa(binary);
+type ExportOptions = {
+  title: string;
+  questions: QuestionRow[];
+  includeAnswers: boolean;
+  questionBackgroundDataUrl?: string;
+  answerBackgroundDataUrl?: string;
+};
+
+type LoadedImage = { bytes: Uint8Array; base64: string; dataUrl: string; type: ImageType; pdfType: "PNG" | "JPEG" };
+
+function inferImageType(source: string): ImageType {
+  if (/^data:image\/(jpe?g)/i.test(source)) return "jpg";
+  return "png";
 }
 
-async function loadAsUint8(url: string): Promise<Uint8Array> {
-  const res = await fetch(url);
-  return new Uint8Array(await res.arrayBuffer());
+function normalizeDataUrl(base64: string, type: ImageType) {
+  return `data:image/${type === "jpg" ? "jpeg" : "png"};base64,${base64}`;
+}
+
+function base64ToBytes(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function loadImageSource(source: string): Promise<LoadedImage> {
+  const type = inferImageType(source);
+  if (source.startsWith("data:image/")) {
+    const base64 = source.split(",")[1] ?? "";
+    return { bytes: base64ToBytes(base64), base64, dataUrl: source, type, pdfType: type === "jpg" ? "JPEG" : "PNG" };
+  }
+
+  const res = await fetch(source);
+  const buf = await res.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let binary = "";
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  const base64 = btoa(binary);
+  return { bytes, base64, dataUrl: normalizeDataUrl(base64, type), type, pdfType: type === "jpg" ? "JPEG" : "PNG" };
 }
 
 function letterAlternatives(q: QuestionRow) {
@@ -86,15 +115,11 @@ function tableBorders(color: string) {
   };
 }
 
-export async function exportDocxInterleaved(opts: {
-  title: string;
-  questions: QuestionRow[];
-  includeAnswers: boolean;
-}) {
+export async function exportDocxInterleaved(opts: ExportOptions) {
   const { title, questions, includeAnswers } = opts;
   const [bgQuestao, bgGabarito] = await Promise.all([
-    loadAsUint8(BG_QUESTAO_URL),
-    loadAsUint8(BG_GABARITO_URL),
+    loadImageSource(opts.questionBackgroundDataUrl || BG_QUESTAO_URL),
+    loadImageSource(opts.answerBackgroundDataUrl || BG_GABARITO_URL),
   ]);
 
   const sections: any[] = [
@@ -133,14 +158,14 @@ export async function exportDocxInterleaved(opts: {
   saveAs(blob, `${slug(title)}.docx`);
 }
 
-function bgHeader(data: Uint8Array): Header {
+function bgHeader(image: LoadedImage): Header {
   return new Header({
     children: [
       new Paragraph({
         children: [
           new ImageRun({
-            type: "png",
-            data,
+            type: image.type,
+            data: image.bytes,
             transformation: { width: 595, height: 842 },
             floating: {
               horizontalPosition: { relative: HorizontalPositionRelativeFrom.PAGE, offset: 0 },
@@ -148,7 +173,7 @@ function bgHeader(data: Uint8Array): Header {
               behindDocument: true,
               wrap: { type: TextWrappingType.NONE },
             },
-          }),
+          } as any),
         ],
       }),
     ],
@@ -279,24 +304,20 @@ function docxAnswerAlternativeCard(alt: { letter: string; exp: string | null }, 
   });
 }
 
-export async function exportPdfInterleaved(opts: {
-  title: string;
-  questions: QuestionRow[];
-  includeAnswers: boolean;
-}) {
+export async function exportPdfInterleaved(opts: ExportOptions) {
   const { title, questions, includeAnswers } = opts;
   const doc = new jsPDF({ unit: "pt", format: "a4" });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
 
   const [bgQuestao, bgGabarito] = await Promise.all([
-    loadAsBase64(BG_QUESTAO_URL),
-    loadAsBase64(BG_GABARITO_URL),
+    loadImageSource(opts.questionBackgroundDataUrl || BG_QUESTAO_URL),
+    loadImageSource(opts.answerBackgroundDataUrl || BG_GABARITO_URL),
   ]);
 
   function drawBackground(kind: BackgroundKind) {
-    const data = kind === "questao" ? bgQuestao : bgGabarito;
-    doc.addImage(`data:image/png;base64,${data}`, "PNG", 0, 0, pageW, pageH, undefined, "FAST");
+    const img = kind === "questao" ? bgQuestao : bgGabarito;
+    doc.addImage(img.dataUrl, img.pdfType, 0, 0, pageW, pageH, undefined, "FAST");
   }
 
   drawBackground("questao");
@@ -434,10 +455,9 @@ function drawNotebookIcon(doc: jsPDF, x: number, y: number, color: [number, numb
 
 function drawPdfAnswerContent(doc: jsPDF, q: QuestionRow, num: number) {
   const pageW = doc.internal.pageSize.getWidth();
-  const pageH = doc.internal.pageSize.getHeight();
   const safe = PDF_SAFE_ANSWER;
   const safeW = pageW - safe.left - safe.right;
-  const safeH = pageH - safe.top - safe.bottom;
+  const safeH = doc.internal.pageSize.getHeight() - safe.top - safe.bottom;
 
   const navy: [number, number, number] = [6, 36, 92];
   const navyText: [number, number, number] = [7, 31, 99];
@@ -490,18 +510,14 @@ function drawPdfAnswerContent(doc: jsPDF, q: QuestionRow, num: number) {
   letterAlternatives(q).forEach((alt, index) => {
     const isCorrect = alt.letter === q.correct;
     const cardH = altHeights[index];
-    if (isCorrect) doc.setFillColor(...greenLight);
-    else doc.setFillColor(255, 255, 255);
-    if (isCorrect) doc.setDrawColor(199, 227, 207);
-    else doc.setDrawColor(...borderGray);
+    doc.setFillColor(...(isCorrect ? greenLight : [255, 255, 255] as [number, number, number]));
+    doc.setDrawColor(...(isCorrect ? [199, 227, 207] as [number, number, number] : borderGray));
     doc.roundedRect(blockX + 18, cy, blockW - 36, cardH, 8, 8, "FD");
-    if (isCorrect) doc.setFillColor(...green);
-    else doc.setFillColor(...navy);
+    doc.setFillColor(...(isCorrect ? green : navy));
     doc.circle(blockX + 44, cy + 24, 16, "F");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(18);
-    if (isCorrect) doc.setTextColor(255, 255, 255);
-    else doc.setTextColor(...gold);
+    doc.setTextColor(...(isCorrect ? [255, 255, 255] as [number, number, number] : gold));
     doc.text(alt.letter, blockX + 44, cy + 30, { align: "center" });
     const label = isCorrect ? "Correta: " : "Incorreta: ";
     const body = `${label}${alt.exp || "—"}`;
@@ -525,9 +541,7 @@ function drawWrappedText(doc: jsPDF, text: string, x: number, y: number, maxWidt
   doc.setTextColor(...color);
   const lines = doc.splitTextToSize(text, maxWidth) as string[];
   const visible = typeof maxLines === "number" ? lines.slice(0, maxLines) : lines;
-  visible.forEach((line, index) => {
-    doc.text(line, x, y + index * (size + lineGap), { align });
-  });
+  visible.forEach((line, index) => doc.text(line, x, y + index * (size + lineGap), { align }));
   return y + visible.length * (size + lineGap);
 }
 
