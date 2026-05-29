@@ -13,11 +13,6 @@ import { Copy, Download, Plus, Save, Trash2, Type, UploadCloud, X } from "lucide
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 
-export const Route = createFileRoute("/covers")({
-  head: () => ({ meta: [{ title: "Capas — Questão de Sucesso" }] }),
-  component: CoversPage,
-});
-
 type CoverModel = { id: string; name: string; image_data_url: string; created_at?: string };
 type TextAlign = "left" | "center" | "right";
 type TextBlock = {
@@ -46,6 +41,11 @@ type Interaction = { blockId: string; mode: "move" | "resize" };
 const COVER_MODELS_QUERY_KEY = ["cover-models"] as const;
 const EXPORT_CANVAS_WIDTH = 1055;
 const EXPORT_CANVAS_HEIGHT = 1491;
+
+export const Route = createFileRoute("/covers")({
+  head: () => ({ meta: [{ title: "Capas — Questão de Sucesso" }] }),
+  component: CoversPage,
+});
 
 function createId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -373,8 +373,8 @@ function CoversPage() {
             )}
 
             <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-start">
-              <div className="max-h-[28vh] overflow-x-auto rounded-md border bg-muted/20 p-2">
-                <div className="flex gap-2">
+              <div className="min-h-44 overflow-x-auto overflow-y-hidden rounded-md border bg-muted/20 p-3">
+                <div className="flex gap-2 pb-1">
                   {models.map((model) => {
                     const active = !pendingImage && model.id === selectedModel?.id;
                     return (
