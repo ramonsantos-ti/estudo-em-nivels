@@ -37,6 +37,7 @@ const BG_GABARITO_URL = "/templates/bg-gabarito.png";
 
 const DOCX_QUESTION_MARGIN = { top: 1700, bottom: 900, left: 720, right: 720 };
 const DOCX_ANSWER_MARGIN = { top: 1700, bottom: 900, left: 720, right: 720 };
+const DOCX_FULL_PAGE_MARGIN = { top: 0, bottom: 0, left: 0, right: 0 };
 
 const PDF_SAFE_QUESTION = { top: 126, bottom: 72, left: 42, right: 42 };
 const PDF_SAFE_ANSWER = { top: 126, bottom: 72, left: 42, right: 42 };
@@ -50,6 +51,7 @@ type ExportOptions = {
   includeAnswers: boolean;
   questionBackgroundDataUrl?: string;
   answerBackgroundDataUrl?: string;
+  levelPageDataUrls?: Record<number, string | undefined>;
 };
 
 type LoadedImage = { bytes: Uint8Array; base64: string; dataUrl: string; type: ImageType; pdfType: "PNG" | "JPEG" };
@@ -104,6 +106,23 @@ function slug(s: string) {
   return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "ebook";
 }
 
+function groupedByLevel(questions: QuestionRow[]) {
+  return [1, 2, 3, 4]
+    .map((level) => ({ level, questions: questions.filter((q: any) => q.level === level) }))
+    .filter((group) => group.questions.length > 0);
+}
+
+async function loadLevelPages(opts: ExportOptions, levels: number[]) {
+  const entries = await Promise.all(
+    levels.map(async (level) => {
+      const source = opts.levelPageDataUrls?.[level];
+      if (!source) return [level, null] as const;
+      return [level, await loadImageSource(source)] as const;
+    })
+  );
+  return new Map<number, LoadedImage | null>(entries);
+}
+
 function tableBorders(color: string) {
   return {
     top: { style: BorderStyle.SINGLE, size: 8, color },
@@ -116,46 +135,53 @@ function tableBorders(color: string) {
 }
 
 export async function exportDocxInterleaved(opts: ExportOptions) {
-  const { title, questions, includeAnswers } = opts;
+  const { title, includeAnswers } = opts;
+  const groups = groupedByLevel(opts.questions);
   const [bgQuestao, bgGabarito] = await Promise.all([
     loadImageSource(opts.questionBackgroundDataUrl || BG_QUESTAO_URL),
     loadImageSource(opts.answerBackgroundDataUrl || BG_GABARITO_URL),
   ]);
+  const levelPages = await loadLevelPages(opts, groups.map((group) => group.level));
 
-  const sections: any[] = [
-    {
-      properties: { page: { margin: DOCX_QUESTION_MARGIN } },
-      headers: { default: bgHeader(bgQuestao) },
-      children: buildDocxCover(title),
-    },
-  ];
+  for (const group of groups) {
+    const sections: any[] = [];
+    const levelPage = levelPages.get(group.level);
 
-  questions.forEach((q, index) => {
-    const num = questionNumber(q, index);
-    sections.push({
-      properties: { page: { margin: DOCX_QUESTION_MARGIN } },
-      headers: { default: bgHeader(bgQuestao) },
-      children: buildDocxQuestionPage(q, num),
-    });
-
-    if (includeAnswers) {
+    if (levelPage) {
       sections.push({
-        properties: { page: { margin: DOCX_ANSWER_MARGIN } },
-        headers: { default: bgHeader(bgGabarito) },
-        children: buildDocxAnswerPage(q, num),
+        properties: { page: { margin: DOCX_FULL_PAGE_MARGIN } },
+        headers: { default: bgHeader(levelPage) },
+        children: [new Paragraph({ children: [] })],
       });
     }
-  });
 
-  const doc = new Document({
-    creator: "Questão de Sucesso",
-    title,
-    styles: { default: { document: { run: { font: "Arial", size: 22 } } } },
-    sections,
-  });
+    group.questions.forEach((q, index) => {
+      const num = questionNumber(q, index);
+      sections.push({
+        properties: { page: { margin: DOCX_QUESTION_MARGIN } },
+        headers: { default: bgHeader(bgQuestao) },
+        children: buildDocxQuestionPage(q, num),
+      });
 
-  const blob = await Packer.toBlob(doc);
-  saveAs(blob, `${slug(title)}.docx`);
+      if (includeAnswers) {
+        sections.push({
+          properties: { page: { margin: DOCX_ANSWER_MARGIN } },
+          headers: { default: bgHeader(bgGabarito) },
+          children: buildDocxAnswerPage(q, num),
+        });
+      }
+    });
+
+    const doc = new Document({
+      creator: "Questão de Sucesso",
+      title: `${title} - Nível ${group.level}`,
+      styles: { default: { document: { run: { font: "Arial", size: 22 } } } },
+      sections,
+    });
+
+    const blob = await Packer.toBlob(doc);
+    saveAs(blob, `${slug(title)}-nivel-${group.level}.docx`);
+  }
 }
 
 function bgHeader(image: LoadedImage): Header {
@@ -178,15 +204,6 @@ function bgHeader(image: LoadedImage): Header {
       }),
     ],
   });
-}
-
-function buildDocxCover(title: string): any[] {
-  return [
-    new Paragraph({ spacing: { before: 2800, after: 120 }, children: [] }),
-    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 160 }, children: [new TextRun({ text: "QUESTÃO DE SUCESSO", bold: true, size: 36, color: NAVY })] }),
-    new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 260 }, children: [new TextRun({ text: title, bold: true, size: 32, color: NAVY })] }),
-    new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "Resolva primeiro. Entenda depois. Evolua sempre.", italics: true, size: 22 })] }),
-  ];
 }
 
 function buildDocxQuestionPage(q: QuestionRow, num: number): any[] {
@@ -305,41 +322,52 @@ function docxAnswerAlternativeCard(alt: { letter: string; exp: string | null }, 
 }
 
 export async function exportPdfInterleaved(opts: ExportOptions) {
-  const { title, questions, includeAnswers } = opts;
-  const doc = new jsPDF({ unit: "pt", format: "a4" });
-  const pageW = doc.internal.pageSize.getWidth();
-  const pageH = doc.internal.pageSize.getHeight();
+  const { title, includeAnswers } = opts;
+  const pageW = 595.28;
+  const pageH = 841.89;
+  const groups = groupedByLevel(opts.questions);
 
   const [bgQuestao, bgGabarito] = await Promise.all([
     loadImageSource(opts.questionBackgroundDataUrl || BG_QUESTAO_URL),
     loadImageSource(opts.answerBackgroundDataUrl || BG_GABARITO_URL),
   ]);
+  const levelPages = await loadLevelPages(opts, groups.map((group) => group.level));
 
-  function drawBackground(kind: BackgroundKind) {
-    const img = kind === "questao" ? bgQuestao : bgGabarito;
-    doc.addImage(img.dataUrl, img.pdfType, 0, 0, pageW, pageH, undefined, "FAST");
-  }
+  for (const group of groups) {
+    const doc = new jsPDF({ unit: "pt", format: "a4" });
+    let hasContentPage = false;
 
-  drawBackground("questao");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(26);
-  doc.setTextColor(11, 30, 77);
-  doc.text(title, pageW / 2, pageH / 2 + 40, { align: "center", maxWidth: pageW - 112 });
-
-  questions.forEach((q, idx) => {
-    const num = questionNumber(q, idx);
-    doc.addPage();
-    drawBackground("questao");
-    drawPdfQuestionContent(doc, q, num);
-
-    if (includeAnswers) {
-      doc.addPage();
-      drawBackground("gabarito");
-      drawPdfAnswerContent(doc, q, num);
+    function usePage() {
+      if (hasContentPage) doc.addPage();
+      hasContentPage = true;
     }
-  });
 
-  doc.save(`${slug(title)}.pdf`);
+    function drawBackground(kind: BackgroundKind) {
+      const img = kind === "questao" ? bgQuestao : bgGabarito;
+      doc.addImage(img.dataUrl, img.pdfType, 0, 0, pageW, pageH, undefined, "FAST");
+    }
+
+    const levelPage = levelPages.get(group.level);
+    if (levelPage) {
+      usePage();
+      doc.addImage(levelPage.dataUrl, levelPage.pdfType, 0, 0, pageW, pageH, undefined, "FAST");
+    }
+
+    group.questions.forEach((q, idx) => {
+      const num = questionNumber(q, idx);
+      usePage();
+      drawBackground("questao");
+      drawPdfQuestionContent(doc, q, num);
+
+      if (includeAnswers) {
+        usePage();
+        drawBackground("gabarito");
+        drawPdfAnswerContent(doc, q, num);
+      }
+    });
+
+    doc.save(`${slug(title)}-nivel-${group.level}.pdf`);
+  }
 }
 
 function drawPdfQuestionContent(doc: jsPDF, q: QuestionRow, num: number) {
