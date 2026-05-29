@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/AppShell";
@@ -44,6 +44,8 @@ type TextBlock = {
 type Interaction = { blockId: string; mode: "move" | "resize" };
 
 const COVER_MODELS_QUERY_KEY = ["cover-models"] as const;
+const EXPORT_CANVAS_WIDTH = 1055;
+const EXPORT_CANVAS_HEIGHT = 1491;
 
 function createId() {
   if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
@@ -113,6 +115,7 @@ function CoversPage() {
   const [blocks, setBlocks] = useState<TextBlock[]>(INITIAL_BLOCKS);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(INITIAL_BLOCKS[0]?.id ?? null);
   const [interaction, setInteraction] = useState<Interaction | null>(null);
+  const [previewScale, setPreviewScale] = useState(1);
 
   const modelsQuery = useQuery({
     queryKey: COVER_MODELS_QUERY_KEY,
@@ -133,6 +136,26 @@ function CoversPage() {
   );
   const selectedImage = pendingImage || selectedModel?.image_data_url || null;
   const selectedBlock = blocks.find((block) => block.id === selectedBlockId) ?? null;
+
+  useEffect(() => {
+    const node = previewRef.current;
+    if (!node) return;
+
+    const updateScale = () => {
+      const width = node.getBoundingClientRect().width;
+      setPreviewScale(width > 0 ? width / EXPORT_CANVAS_WIDTH : 1);
+    };
+
+    updateScale();
+    const observer = new ResizeObserver(updateScale);
+    observer.observe(node);
+    window.addEventListener("resize", updateScale);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", updateScale);
+    };
+  }, [selectedImage]);
 
   const saveModel = useMutation({
     mutationFn: async () => {
@@ -469,9 +492,9 @@ function CoversPage() {
                   onPointerCancel={finishInteraction}
                   onPointerLeave={finishInteraction}
                 >
-                  <img src={selectedImage} alt="Modelo de capa" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+                  <img src={selectedImage} alt="Modelo de capa" className="absolute inset-0 h-full w-full object-fill" draggable={false} />
                   {blocks.map((block) => (
-                    <EditableTextBlock key={block.id} block={block} selected={block.id === selectedBlockId} onSelect={() => setSelectedBlockId(block.id)} onStart={beginInteraction} />
+                    <EditableTextBlock key={block.id} block={block} selected={block.id === selectedBlockId} scale={previewScale} onSelect={() => setSelectedBlockId(block.id)} onStart={beginInteraction} />
                   ))}
                 </div>
               ) : (
@@ -487,7 +510,13 @@ function CoversPage() {
   );
 }
 
-function EditableTextBlock({ block, selected, onSelect, onStart }: { block: TextBlock; selected: boolean; onSelect: () => void; onStart: (blockId: string, mode: "move" | "resize") => void }) {
+function EditableTextBlock({ block, selected, scale, onSelect, onStart }: { block: TextBlock; selected: boolean; scale: number; onSelect: () => void; onStart: (blockId: string, mode: "move" | "resize") => void }) {
+  const scaledFontSize = block.fontSize * scale;
+  const scaledPadding = block.padding * scale;
+  const scaledBorderWidth = block.borderWidth * scale;
+  const scaledBorderRadius = block.borderRadius * scale;
+  const scaledStrokeWidth = Math.max(0.6, scaledFontSize * 0.06);
+
   return (
     <div
       role="button"
@@ -504,9 +533,9 @@ function EditableTextBlock({ block, selected, onSelect, onStart }: { block: Text
         className="flex h-full w-full overflow-hidden"
         style={{
           backgroundColor: hexToRgba(block.backgroundColor, block.backgroundOpacity),
-          border: `${block.borderWidth}px solid ${block.borderColor}`,
-          borderRadius: `${block.borderRadius}px`,
-          padding: `${block.padding}px`,
+          border: `${scaledBorderWidth}px solid ${block.borderColor}`,
+          borderRadius: `${scaledBorderRadius}px`,
+          padding: `${scaledPadding}px`,
           alignItems: "center",
           justifyContent: block.align === "left" ? "flex-start" : block.align === "center" ? "center" : "flex-end",
           textAlign: block.align,
@@ -516,13 +545,16 @@ function EditableTextBlock({ block, selected, onSelect, onStart }: { block: Text
           style={{
             width: "100%",
             color: block.color,
-            fontSize: `${block.fontSize}px`,
+            fontFamily: "Arial, sans-serif",
+            fontSize: `${scaledFontSize}px`,
             fontWeight: block.bold ? 700 : 400,
             fontStyle: block.italic ? "italic" : "normal",
             lineHeight: block.lineHeight,
             textTransform: block.uppercase ? "uppercase" : "none",
             whiteSpace: "pre-wrap",
             wordBreak: "break-word",
+            WebkitTextStroke: `${scaledStrokeWidth}px rgba(0,0,0,0.55)`,
+            paintOrder: "stroke fill",
           }}
         >
           {block.text}
@@ -587,8 +619,8 @@ function loadImage(src: string) {
 async function renderCoverToCanvas(args: { imageDataUrl: string; blocks: TextBlock[] }) {
   const img = await loadImage(args.imageDataUrl);
   const canvas = document.createElement("canvas");
-  canvas.width = 1055;
-  canvas.height = 1491;
+  canvas.width = EXPORT_CANVAS_WIDTH;
+  canvas.height = EXPORT_CANVAS_HEIGHT;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Não foi possível gerar o PDF.");
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
@@ -597,10 +629,10 @@ async function renderCoverToCanvas(args: { imageDataUrl: string; blocks: TextBlo
 }
 
 function drawBlock(ctx: CanvasRenderingContext2D, block: TextBlock) {
-  const x = pct(block.x, 1055);
-  const y = pct(block.y, 1491);
-  const w = pct(block.width, 1055);
-  const h = pct(block.height, 1491);
+  const x = pct(block.x, EXPORT_CANVAS_WIDTH);
+  const y = pct(block.y, EXPORT_CANVAS_HEIGHT);
+  const w = pct(block.width, EXPORT_CANVAS_WIDTH);
+  const h = pct(block.height, EXPORT_CANVAS_HEIGHT);
   const pad = block.padding;
   if (block.backgroundOpacity > 0 || block.borderWidth > 0) drawRoundRect(ctx, x, y, w, h, block.borderRadius, hexToRgba(block.backgroundColor, block.backgroundOpacity), block.borderColor, block.borderWidth);
   ctx.save();
