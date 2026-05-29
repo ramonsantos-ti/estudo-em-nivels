@@ -38,6 +38,33 @@ export type Database = {
         }
         Relationships: []
       }
+      notebook_models: {
+        Row: {
+          answer_bg_data_url: string
+          created_at: string
+          id: string
+          name: string
+          question_bg_data_url: string
+          updated_at: string
+        }
+        Insert: {
+          answer_bg_data_url: string
+          created_at?: string
+          id?: string
+          name: string
+          question_bg_data_url: string
+          updated_at?: string
+        }
+        Update: {
+          answer_bg_data_url?: string
+          created_at?: string
+          id?: string
+          name?: string
+          question_bg_data_url?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       questions: {
         Row: {
           alt_a: string
