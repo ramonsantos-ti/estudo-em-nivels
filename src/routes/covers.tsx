@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
-import type { PointerEvent, ReactNode } from "react";
+import type { PointerEvent } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -18,15 +18,8 @@ export const Route = createFileRoute("/covers")({
   component: CoversPage,
 });
 
-type CoverModel = {
-  id: string;
-  name: string;
-  image_data_url: string | null;
-  created_at?: string;
-};
-
+type CoverModel = { id: string; name: string; image_data_url: string; created_at?: string };
 type TextAlign = "left" | "center" | "right";
-
 type TextBlock = {
   id: string;
   text: string;
@@ -48,11 +41,7 @@ type TextBlock = {
   lineHeight: number;
   uppercase: boolean;
 };
-
-type Interaction = {
-  blockId: string;
-  mode: "move" | "resize";
-};
+type Interaction = { blockId: string; mode: "move" | "resize" };
 
 const COVER_MODELS_QUERY_KEY = ["cover-models"] as const;
 
@@ -128,8 +117,8 @@ function CoversPage() {
   const modelsQuery = useQuery({
     queryKey: COVER_MODELS_QUERY_KEY,
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("covers")
+      const { data, error } = await (supabase as any)
+        .from("cover_models")
         .select("id, name, image_data_url, created_at")
         .order("created_at", { ascending: false });
       if (error) throw error;
@@ -149,19 +138,9 @@ function CoversPage() {
     mutationFn: async () => {
       if (!pendingImage) throw new Error("Selecione uma imagem antes de salvar o modelo.");
       const name = modelName.trim() || pendingFileName || "Modelo de capa";
-      const { data, error } = await supabase
-        .from("covers")
-        .insert({
-          name,
-          image_data_url: pendingImage,
-          title_line_1: "",
-          title_line_2: "",
-          title_line_3: "",
-          subtitle: "",
-          badge_text: "",
-          quote_text: "",
-          is_active: true,
-        })
+      const { data, error } = await (supabase as any)
+        .from("cover_models")
+        .insert({ name, image_data_url: pendingImage })
         .select("id, name, image_data_url, created_at")
         .single();
       if (error) throw error;
@@ -170,7 +149,7 @@ function CoversPage() {
     onSuccess: async (savedModel) => {
       qc.setQueryData<CoverModel[]>(COVER_MODELS_QUERY_KEY, (current = []) => {
         const withoutDuplicate = current.filter((model) => model.id !== savedModel.id);
-        return [savedModel, ...withoutDuplicate].filter((model) => Boolean(model.image_data_url));
+        return [savedModel, ...withoutDuplicate];
       });
       setSelectedModelId(savedModel.id);
       setPendingImage(null);
@@ -179,12 +158,12 @@ function CoversPage() {
       await qc.invalidateQueries({ queryKey: COVER_MODELS_QUERY_KEY });
       toast.success("Modelo salvo e adicionado ao carrossel");
     },
-    onError: (e: any) => toast.error(e.message),
+    onError: (e: any) => toast.error(`Erro ao salvar modelo: ${e.message}`),
   });
 
   const deleteModel = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase.from("covers").delete().eq("id", id);
+      const { error } = await (supabase as any).from("cover_models").delete().eq("id", id);
       if (error) throw error;
     },
     onSuccess: async (_, deletedId) => {
@@ -193,7 +172,7 @@ function CoversPage() {
       await qc.invalidateQueries({ queryKey: COVER_MODELS_QUERY_KEY });
       toast.success("Modelo excluído");
     },
-    onError: (e: any) => toast.error(e.message),
+    onError: (e: any) => toast.error(`Erro ao excluir modelo: ${e.message}`),
   });
 
   async function handleUpload(file: File | undefined) {
@@ -249,7 +228,7 @@ function CoversPage() {
 
   function updateSelectedBlock(patch: Partial<TextBlock>) {
     if (!selectedBlockId) return;
-    setBlocks((current) => current.map((block) => block.id === selectedBlockId ? { ...block, ...patch } : block));
+    setBlocks((current) => current.map((block) => (block.id === selectedBlockId ? { ...block, ...patch } : block)));
   }
 
   function beginInteraction(blockId: string, mode: "move" | "resize") {
@@ -357,6 +336,12 @@ function CoversPage() {
               </div>
             )}
 
+            {modelsQuery.isError && (
+              <div className="rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive">
+                Erro ao carregar modelos: {(modelsQuery.error as any)?.message ?? "erro desconhecido"}
+              </div>
+            )}
+
             <div className="max-h-[28vh] overflow-x-auto rounded-md border bg-muted/20 p-2">
               <div className="flex gap-2">
                 {models.map((model) => {
@@ -369,15 +354,16 @@ function CoversPage() {
                       className={`w-24 shrink-0 rounded-md border p-1 text-left transition ${active ? "border-secondary ring-2 ring-secondary" : "border-border hover:border-primary"}`}
                     >
                       <div className="aspect-[1055/1491] overflow-hidden rounded bg-muted">
-                        <img src={model.image_data_url || ""} alt={model.name} className="h-full w-full object-cover" />
+                        <img src={model.image_data_url} alt={model.name} className="h-full w-full object-cover" />
                       </div>
                       <div className="mt-1 line-clamp-2 text-[11px] font-medium text-primary">{model.name}</div>
                     </button>
                   );
                 })}
-                {models.length === 0 && !pendingImage && (
+                {models.length === 0 && !pendingImage && !modelsQuery.isLoading && (
                   <div className="py-6 text-sm text-muted-foreground">Nenhum modelo salvo. Escolha uma imagem e clique em Salvar modelo.</div>
                 )}
+                {modelsQuery.isLoading && <div className="py-6 text-sm text-muted-foreground">Carregando modelos...</div>}
               </div>
             </div>
           </CardContent>
@@ -401,11 +387,7 @@ function CoversPage() {
                 </Button>
               </div>
 
-              {!selectedBlock && (
-                <div className="rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
-                  Selecione um bloco na imagem ou crie um novo.
-                </div>
-              )}
+              {!selectedBlock && <div className="rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">Selecione um bloco na imagem ou crie um novo.</div>}
 
               {selectedBlock && (
                 <>
@@ -479,13 +461,7 @@ function CoversPage() {
                 >
                   <img src={selectedImage} alt="Modelo de capa" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
                   {blocks.map((block) => (
-                    <EditableTextBlock
-                      key={block.id}
-                      block={block}
-                      selected={block.id === selectedBlockId}
-                      onSelect={() => setSelectedBlockId(block.id)}
-                      onStart={beginInteraction}
-                    />
+                    <EditableTextBlock key={block.id} block={block} selected={block.id === selectedBlockId} onSelect={() => setSelectedBlockId(block.id)} onStart={beginInteraction} />
                   ))}
                 </div>
               ) : (
@@ -501,17 +477,7 @@ function CoversPage() {
   );
 }
 
-function EditableTextBlock({
-  block,
-  selected,
-  onSelect,
-  onStart,
-}: {
-  block: TextBlock;
-  selected: boolean;
-  onSelect: () => void;
-  onStart: (blockId: string, mode: "move" | "resize") => void;
-}) {
+function EditableTextBlock({ block, selected, onSelect, onStart }: { block: TextBlock; selected: boolean; onSelect: () => void; onStart: (blockId: string, mode: "move" | "resize") => void }) {
   return (
     <div
       role="button"
@@ -563,37 +529,23 @@ function EditableTextBlock({
           onStart(block.id, "resize");
         }}
       />
-      {selected && (
-        <div className="pointer-events-none absolute -top-6 left-0 rounded bg-secondary px-2 py-1 text-[10px] font-bold text-secondary-foreground">
-          <Type className="inline h-3 w-3 mr-1" /> Bloco selecionado
-        </div>
-      )}
+      {selected && <div className="pointer-events-none absolute -top-6 left-0 rounded bg-secondary px-2 py-1 text-[10px] font-bold text-secondary-foreground"><Type className="inline h-3 w-3 mr-1" /> Bloco selecionado</div>}
     </div>
   );
 }
 
 function FieldNumber({ label, value, onChange, step = 1, min, max }: { label: string; value: number; onChange: (value: number) => void; step?: number; min?: number; max?: number }) {
-  return (
-    <div>
-      <Label>{label}</Label>
-      <Input type="number" step={step} min={min} max={max} value={value} onChange={(e) => onChange(Number(e.target.value) || 0)} />
-    </div>
-  );
+  return <div><Label>{label}</Label><Input type="number" step={step} min={min} max={max} value={value} onChange={(e) => onChange(Number(e.target.value) || 0)} /></div>;
 }
 
 function FieldColor({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
-  return (
-    <div>
-      <Label>{label}</Label>
-      <Input type="color" value={value} onChange={(e) => onChange(e.target.value)} />
-    </div>
-  );
+  return <div><Label>{label}</Label><Input type="color" value={value} onChange={(e) => onChange(e.target.value)} /></div>;
 }
 
 async function fileToCompressedDataUrl(file: File) {
   const source = await fileToDataUrl(file);
   const img = await loadImage(source);
-  const maxW = 1400;
+  const maxW = 1200;
   const scale = Math.min(1, maxW / img.width);
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(img.width * scale);
@@ -601,7 +553,7 @@ async function fileToCompressedDataUrl(file: File) {
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Não foi possível processar a imagem.");
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.9);
+  return canvas.toDataURL("image/jpeg", 0.82);
 }
 
 function fileToDataUrl(file: File) {
@@ -640,17 +592,12 @@ function drawBlock(ctx: CanvasRenderingContext2D, block: TextBlock) {
   const w = pct(block.width, 1055);
   const h = pct(block.height, 1491);
   const pad = block.padding;
-
-  if (block.backgroundOpacity > 0 || block.borderWidth > 0) {
-    drawRoundRect(ctx, x, y, w, h, block.borderRadius, hexToRgba(block.backgroundColor, block.backgroundOpacity), block.borderColor, block.borderWidth);
-  }
-
+  if (block.backgroundOpacity > 0 || block.borderWidth > 0) drawRoundRect(ctx, x, y, w, h, block.borderRadius, hexToRgba(block.backgroundColor, block.backgroundOpacity), block.borderColor, block.borderWidth);
   ctx.save();
   ctx.fillStyle = block.color;
   ctx.font = `${block.italic ? "italic " : ""}${block.bold ? "700 " : "400 "}${block.fontSize}px Arial`;
   ctx.textAlign = block.align;
   ctx.textBaseline = "top";
-
   const text = block.uppercase ? block.text.toUpperCase() : block.text;
   const lines = wrapText(ctx, text, w - pad * 2);
   const lineHeight = block.fontSize * block.lineHeight;
@@ -659,7 +606,6 @@ function drawBlock(ctx: CanvasRenderingContext2D, block: TextBlock) {
   if (totalTextH < h - pad * 2) startY = y + (h - totalTextH) / 2;
   const textX = block.align === "left" ? x + pad : block.align === "center" ? x + w / 2 : x + w - pad;
   const maxWidth = w - pad * 2;
-
   lines.forEach((line, index) => {
     const lineY = startY + index * lineHeight;
     ctx.lineWidth = Math.max(2, block.fontSize * 0.06);
@@ -667,7 +613,6 @@ function drawBlock(ctx: CanvasRenderingContext2D, block: TextBlock) {
     ctx.strokeText(line, textX, lineY, maxWidth);
     ctx.fillText(line, textX, lineY, maxWidth);
   });
-
   ctx.restore();
 }
 
