@@ -1,13 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useRef, useState } from "react";
+import type { PointerEvent, ReactNode } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Download, ImagePlus, Save, Trash2, UploadCloud, X } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import { Copy, Download, Plus, Save, Trash2, Type, UploadCloud, X } from "lucide-react";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 
@@ -23,44 +25,104 @@ type CoverModel = {
   created_at?: string;
 };
 
-type TextLayerKey = "title" | "subtitle" | "tagline";
+type TextAlign = "left" | "center" | "right";
 
-type TextLayerBox = {
+type TextBlock = {
+  id: string;
+  text: string;
   x: number;
   y: number;
   width: number;
   height: number;
+  fontSize: number;
+  color: string;
+  bold: boolean;
+  italic: boolean;
+  align: TextAlign;
+  backgroundColor: string;
+  backgroundOpacity: number;
+  borderColor: string;
+  borderWidth: number;
+  borderRadius: number;
+  padding: number;
+  lineHeight: number;
+  uppercase: boolean;
 };
 
-type TextLayerBoxes = Record<TextLayerKey, TextLayerBox>;
-
 type Interaction = {
-  layer: TextLayerKey;
+  blockId: string;
   mode: "move" | "resize";
 };
 
 const COVER_MODELS_QUERY_KEY = ["cover-models"] as const;
 
-const DEFAULT_BOXES: TextLayerBoxes = {
-  title: { x: 8, y: 17, width: 84, height: 18 },
-  subtitle: { x: 22, y: 35, width: 56, height: 6 },
-  tagline: { x: 16, y: 42, width: 68, height: 5 },
-};
+function createId() {
+  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
+  return Math.random().toString(36).slice(2);
+}
+
+function createBlock(overrides: Partial<TextBlock> = {}): TextBlock {
+  return {
+    id: createId(),
+    text: "Novo bloco de texto",
+    x: 18,
+    y: 18,
+    width: 60,
+    height: 10,
+    fontSize: 42,
+    color: "#ffffff",
+    bold: true,
+    italic: false,
+    align: "center",
+    backgroundColor: "#071a3a",
+    backgroundOpacity: 0,
+    borderColor: "#ffc400",
+    borderWidth: 0,
+    borderRadius: 10,
+    padding: 8,
+    lineHeight: 1.1,
+    uppercase: false,
+    ...overrides,
+  };
+}
+
+const INITIAL_BLOCKS: TextBlock[] = [
+  createBlock({
+    text: "ESTATUTO DO\nSERVIDOR PÚBLICO\nFEDERAL",
+    x: 10,
+    y: 18,
+    width: 80,
+    height: 18,
+    fontSize: 58,
+    lineHeight: 0.95,
+    uppercase: true,
+  }),
+  createBlock({
+    text: "Lei nº 8.112/90",
+    x: 24,
+    y: 37,
+    width: 52,
+    height: 6,
+    fontSize: 28,
+    color: "#ffc400",
+    backgroundOpacity: 0.65,
+    borderWidth: 2,
+    borderRadius: 14,
+    padding: 10,
+  }),
+];
 
 function CoversPage() {
   const qc = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
-  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+
   const [pendingImage, setPendingImage] = useState<string | null>(null);
   const [pendingFileName, setPendingFileName] = useState("");
   const [modelName, setModelName] = useState("");
-  const [titleLine1, setTitleLine1] = useState("ESTATUTO DO");
-  const [titleLine2, setTitleLine2] = useState("SERVIDOR PÚBLICO");
-  const [titleLine3, setTitleLine3] = useState("FEDERAL");
-  const [subtitle, setSubtitle] = useState("Lei nº 8.112/90");
-  const [tagline, setTagline] = useState("Estude por questões. Aprenda na prática. Seja aprovado.");
-  const [boxes, setBoxes] = useState<TextLayerBoxes>(DEFAULT_BOXES);
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [blocks, setBlocks] = useState<TextBlock[]>(INITIAL_BLOCKS);
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(INITIAL_BLOCKS[0]?.id ?? null);
   const [interaction, setInteraction] = useState<Interaction | null>(null);
 
   const modelsQuery = useQuery({
@@ -81,6 +143,7 @@ function CoversPage() {
     [models, selectedModelId],
   );
   const selectedImage = pendingImage || selectedModel?.image_data_url || null;
+  const selectedBlock = blocks.find((block) => block.id === selectedBlockId) ?? null;
 
   const saveModel = useMutation({
     mutationFn: async () => {
@@ -126,9 +189,9 @@ function CoversPage() {
     },
     onSuccess: async (_, deletedId) => {
       qc.setQueryData<CoverModel[]>(COVER_MODELS_QUERY_KEY, (current = []) => current.filter((model) => model.id !== deletedId));
-      toast.success("Modelo excluído");
       setSelectedModelId(null);
       await qc.invalidateQueries({ queryKey: COVER_MODELS_QUERY_KEY });
+      toast.success("Modelo excluído");
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -159,38 +222,62 @@ function CoversPage() {
     setSelectedModelId(model.id);
   }
 
-  function beginInteraction(layer: TextLayerKey, mode: "move" | "resize") {
-    setInteraction({ layer, mode });
+  function addBlock() {
+    const block = createBlock();
+    setBlocks((current) => [...current, block]);
+    setSelectedBlockId(block.id);
   }
 
-  function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
+  function duplicateBlock() {
+    if (!selectedBlock) return;
+    const clone = createBlock({
+      ...selectedBlock,
+      id: createId(),
+      x: clamp(selectedBlock.x + 2, 0, 100 - selectedBlock.width),
+      y: clamp(selectedBlock.y + 2, 0, 100 - selectedBlock.height),
+    });
+    setBlocks((current) => [...current, clone]);
+    setSelectedBlockId(clone.id);
+  }
+
+  function removeBlock() {
+    if (!selectedBlockId) return;
+    const next = blocks.filter((block) => block.id !== selectedBlockId);
+    setBlocks(next);
+    setSelectedBlockId(next[0]?.id ?? null);
+  }
+
+  function updateSelectedBlock(patch: Partial<TextBlock>) {
+    if (!selectedBlockId) return;
+    setBlocks((current) => current.map((block) => block.id === selectedBlockId ? { ...block, ...patch } : block));
+  }
+
+  function beginInteraction(blockId: string, mode: "move" | "resize") {
+    setSelectedBlockId(blockId);
+    setInteraction({ blockId, mode });
+  }
+
+  function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
     if (!interaction || !previewRef.current) return;
     const rect = previewRef.current.getBoundingClientRect();
     const pointerX = ((event.clientX - rect.left) / rect.width) * 100;
     const pointerY = ((event.clientY - rect.top) / rect.height) * 100;
 
-    setBoxes((current) => {
-      const box = current[interaction.layer];
+    setBlocks((current) => current.map((block) => {
+      if (block.id !== interaction.blockId) return block;
       if (interaction.mode === "resize") {
         return {
-          ...current,
-          [interaction.layer]: {
-            ...box,
-            width: clamp(pointerX - box.x, 12, 100 - box.x),
-            height: clamp(pointerY - box.y, 3, 100 - box.y),
-          },
+          ...block,
+          width: clamp(pointerX - block.x, 8, 100 - block.x),
+          height: clamp(pointerY - block.y, 3, 100 - block.y),
         };
       }
-
       return {
-        ...current,
-        [interaction.layer]: {
-          ...box,
-          x: clamp(pointerX - box.width / 2, 0, 100 - box.width),
-          y: clamp(pointerY - box.height / 2, 0, 100 - box.height),
-        },
+        ...block,
+        x: clamp(pointerX - block.width / 2, 0, 100 - block.width),
+        y: clamp(pointerY - block.height / 2, 0, 100 - block.height),
       };
-    });
+    }));
   }
 
   function finishInteraction() {
@@ -204,21 +291,13 @@ function CoversPage() {
     }
 
     try {
-      const canvas = await renderCoverToCanvas({
-        imageDataUrl: selectedImage,
-        titleLine1,
-        titleLine2,
-        titleLine3,
-        subtitle,
-        tagline,
-        boxes,
-      });
+      const canvas = await renderCoverToCanvas({ imageDataUrl: selectedImage, blocks });
       const img = canvas.toDataURL("image/jpeg", 0.92);
       const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
       const pageW = pdf.internal.pageSize.getWidth();
       const pageH = pdf.internal.pageSize.getHeight();
       pdf.addImage(img, "JPEG", 0, 0, pageW, pageH, undefined, "FAST");
-      pdf.save(`${slug([titleLine1, titleLine2, titleLine3].filter(Boolean).join(" ") || "capa")}.pdf`);
+      pdf.save(`${slug(selectedModel?.name || "capa")}.pdf`);
       toast.success("Capa exportada em PDF");
     } catch (e: any) {
       toast.error(e.message || "Não foi possível exportar a capa.");
@@ -231,15 +310,13 @@ function CoversPage() {
         <div>
           <h1 className="text-3xl font-bold text-primary">Capas personalizadas</h1>
           <p className="text-muted-foreground">
-            Envie imagens de fundo como modelos de capa. Depois selecione um modelo, preencha os textos, mova/redimensione as caixas e exporte em PDF.
+            Envie imagens de fundo como modelos. Depois escreva diretamente sobre a imagem, com quantos blocos de texto quiser.
           </p>
         </div>
 
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2">
-              <ImagePlus className="h-5 w-5" /> Upload e modelos salvos
-            </CardTitle>
+            <CardTitle>Upload e modelos salvos</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <div className="grid gap-3 md:grid-cols-[auto_1fr_auto] md:items-end">
@@ -255,6 +332,7 @@ function CoversPage() {
                   <UploadCloud className="h-4 w-4 mr-2" /> Escolher imagem
                 </Button>
               </div>
+
               <div>
                 <Label>Nome do modelo</Label>
                 <Input
@@ -264,6 +342,7 @@ function CoversPage() {
                   disabled={!pendingImage}
                 />
               </div>
+
               <Button type="button" onClick={() => saveModel.mutate()} disabled={!pendingImage || saveModel.isPending}>
                 <Save className="h-4 w-4 mr-2" /> {saveModel.isPending ? "Salvando..." : "Salvar modelo"}
               </Button>
@@ -307,58 +386,86 @@ function CoversPage() {
         <div className="grid gap-8 lg:grid-cols-[0.8fr_1.2fr]">
           <Card>
             <CardHeader className="bg-primary text-primary-foreground">
-              <CardTitle>Informações da capa</CardTitle>
+              <CardTitle>Painel do bloco selecionado</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-6">
-              <div>
-                <Label>Linha 1 do título</Label>
-                <Input value={titleLine1} onChange={(e) => setTitleLine1(e.target.value.toUpperCase())} />
+              <div className="flex gap-2">
+                <Button type="button" onClick={addBlock} className="flex-1">
+                  <Plus className="h-4 w-4 mr-2" /> Adicionar bloco
+                </Button>
+                <Button type="button" variant="outline" onClick={duplicateBlock} disabled={!selectedBlock}>
+                  <Copy className="h-4 w-4 mr-2" /> Duplicar
+                </Button>
+                <Button type="button" variant="outline" onClick={removeBlock} disabled={!selectedBlock}>
+                  <Trash2 className="h-4 w-4 text-destructive" />
+                </Button>
               </div>
-              <div>
-                <Label>Linha 2 do título</Label>
-                <Input value={titleLine2} onChange={(e) => setTitleLine2(e.target.value.toUpperCase())} />
-              </div>
-              <div>
-                <Label>Linha 3 do título</Label>
-                <Input value={titleLine3} onChange={(e) => setTitleLine3(e.target.value.toUpperCase())} />
-              </div>
-              <div>
-                <Label>Subtítulo/base legal</Label>
-                <Input value={subtitle} onChange={(e) => setSubtitle(e.target.value)} />
-              </div>
-              <div>
-                <Label>Frase complementar</Label>
-                <Input value={tagline} onChange={(e) => setTagline(e.target.value)} />
-              </div>
+
+              {!selectedBlock && (
+                <div className="rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
+                  Selecione um bloco na imagem ou crie um novo.
+                </div>
+              )}
+
+              {selectedBlock && (
+                <>
+                  <div>
+                    <Label>Texto</Label>
+                    <Textarea rows={5} value={selectedBlock.text} onChange={(e) => updateSelectedBlock({ text: e.target.value })} />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <FieldNumber label="Fonte" value={selectedBlock.fontSize} onChange={(v) => updateSelectedBlock({ fontSize: v })} />
+                    <FieldColor label="Cor do texto" value={selectedBlock.color} onChange={(v) => updateSelectedBlock({ color: v })} />
+                    <FieldColor label="Cor do fundo" value={selectedBlock.backgroundColor} onChange={(v) => updateSelectedBlock({ backgroundColor: v })} />
+                    <FieldNumber label="Opacidade fundo" value={selectedBlock.backgroundOpacity} step={0.05} min={0} max={1} onChange={(v) => updateSelectedBlock({ backgroundOpacity: clamp(v, 0, 1) })} />
+                    <FieldColor label="Cor da borda" value={selectedBlock.borderColor} onChange={(v) => updateSelectedBlock({ borderColor: v })} />
+                    <FieldNumber label="Borda" value={selectedBlock.borderWidth} min={0} onChange={(v) => updateSelectedBlock({ borderWidth: v })} />
+                    <FieldNumber label="Arredondamento" value={selectedBlock.borderRadius} min={0} onChange={(v) => updateSelectedBlock({ borderRadius: v })} />
+                    <FieldNumber label="Padding" value={selectedBlock.padding} min={0} onChange={(v) => updateSelectedBlock({ padding: v })} />
+                    <FieldNumber label="Entrelinhas" value={selectedBlock.lineHeight} step={0.05} min={0.7} onChange={(v) => updateSelectedBlock({ lineHeight: v })} />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    {(["left", "center", "right"] as TextAlign[]).map((align) => (
+                      <Button key={align} type="button" variant={selectedBlock.align === align ? "default" : "outline"} onClick={() => updateSelectedBlock({ align })}>
+                        {align === "left" ? "Esquerda" : align === "center" ? "Centro" : "Direita"}
+                      </Button>
+                    ))}
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <Button type="button" variant={selectedBlock.bold ? "default" : "outline"} onClick={() => updateSelectedBlock({ bold: !selectedBlock.bold })}>Negrito</Button>
+                    <Button type="button" variant={selectedBlock.italic ? "default" : "outline"} onClick={() => updateSelectedBlock({ italic: !selectedBlock.italic })}>Itálico</Button>
+                    <Button type="button" variant={selectedBlock.uppercase ? "default" : "outline"} onClick={() => updateSelectedBlock({ uppercase: !selectedBlock.uppercase })}>Caixa alta</Button>
+                  </div>
+                </>
+              )}
 
               <div className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
-                Arraste a caixa para mover. Arraste o quadrado no canto inferior direito da caixa para redimensionar.
+                Clique em um bloco para selecioná-lo. Arraste o bloco para mover. Arraste o quadrado no canto inferior direito para redimensionar.
               </div>
 
-              <div className="flex gap-2">
-                <Button type="button" onClick={exportPdf} disabled={!selectedImage} className="bg-primary hover:bg-primary/90 flex-1">
-                  <Download className="h-4 w-4 mr-2" /> Exportar PDF
+              <Button type="button" onClick={exportPdf} disabled={!selectedImage} className="bg-primary hover:bg-primary/90 w-full">
+                <Download className="h-4 w-4 mr-2" /> Exportar PDF
+              </Button>
+
+              {!pendingImage && selectedModel && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => { if (confirm("Excluir este modelo de capa?")) deleteModel.mutate(selectedModel.id); }}
+                  className="w-full"
+                >
+                  <Trash2 className="h-4 w-4 mr-2 text-destructive" /> Excluir modelo selecionado
                 </Button>
-                {!pendingImage && selectedModel && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={() => {
-                      if (confirm("Excluir este modelo de capa?")) deleteModel.mutate(selectedModel.id);
-                    }}
-                  >
-                    <Trash2 className="h-4 w-4 text-destructive" />
-                  </Button>
-                )}
-              </div>
+              )}
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle>
-                {pendingImage ? "Prévia da imagem ainda não salva" : selectedModel ? "Modelo selecionado" : "Nenhum modelo selecionado"}
-              </CardTitle>
+              <CardTitle>Editor visual da capa</CardTitle>
             </CardHeader>
             <CardContent>
               {selectedImage ? (
@@ -371,29 +478,15 @@ function CoversPage() {
                   onPointerLeave={finishInteraction}
                 >
                   <img src={selectedImage} alt="Modelo de capa" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
-                  <EditableBox
-                    layer="title"
-                    box={boxes.title}
-                    onStart={beginInteraction}
-                    className="text-center font-black uppercase leading-[0.95] text-white drop-shadow-[0_3px_4px_rgba(0,0,0,0.75)]"
-                  >
-                    <div className="text-[clamp(22px,5.3vw,78px)]">{titleLine1}</div>
-                    <div className="text-[clamp(22px,5.3vw,78px)] text-[#ffc400]">{titleLine2}</div>
-                    <div className="text-[clamp(22px,5.3vw,78px)]">{titleLine3}</div>
-                  </EditableBox>
-                  <EditableBox layer="subtitle" box={boxes.subtitle} onStart={beginInteraction} className="text-center">
-                    <span className="inline-block rounded-xl border-2 border-[#ffc400] bg-[#071a3a]/70 px-5 py-2 text-[clamp(14px,2.4vw,34px)] font-black text-[#ffc400] shadow">
-                      {subtitle}
-                    </span>
-                  </EditableBox>
-                  <EditableBox
-                    layer="tagline"
-                    box={boxes.tagline}
-                    onStart={beginInteraction}
-                    className="text-center text-[clamp(12px,1.8vw,24px)] font-bold text-white drop-shadow"
-                  >
-                    {tagline}
-                  </EditableBox>
+                  {blocks.map((block) => (
+                    <EditableTextBlock
+                      key={block.id}
+                      block={block}
+                      selected={block.id === selectedBlockId}
+                      onSelect={() => setSelectedBlockId(block.id)}
+                      onStart={beginInteraction}
+                    />
+                  ))}
                 </div>
               ) : (
                 <div className="flex aspect-[1055/1491] max-h-[82vh] items-center justify-center rounded-xl border bg-muted text-center text-muted-foreground">
@@ -408,41 +501,91 @@ function CoversPage() {
   );
 }
 
-function EditableBox({
-  layer,
-  box,
+function EditableTextBlock({
+  block,
+  selected,
+  onSelect,
   onStart,
-  className,
-  children,
 }: {
-  layer: TextLayerKey;
-  box: TextLayerBox;
-  onStart: (layer: TextLayerKey, mode: "move" | "resize") => void;
-  className?: string;
-  children: React.ReactNode;
+  block: TextBlock;
+  selected: boolean;
+  onSelect: () => void;
+  onStart: (blockId: string, mode: "move" | "resize") => void;
 }) {
   return (
     <div
       role="button"
       tabIndex={0}
-      className={`absolute cursor-move rounded-md border border-dashed border-white/60 p-1 ${className ?? ""}`}
-      style={{ left: `${box.x}%`, top: `${box.y}%`, width: `${box.width}%`, height: `${box.height}%` }}
+      className={`absolute cursor-move overflow-visible ${selected ? "ring-2 ring-secondary" : ""}`}
+      style={{ left: `${block.x}%`, top: `${block.y}%`, width: `${block.width}%`, height: `${block.height}%` }}
       onPointerDown={(event) => {
         event.currentTarget.setPointerCapture(event.pointerId);
-        onStart(layer, "move");
+        onSelect();
+        onStart(block.id, "move");
       }}
     >
-      <div className="flex h-full w-full items-center justify-center overflow-hidden">{children}</div>
+      <div
+        className="flex h-full w-full overflow-hidden"
+        style={{
+          backgroundColor: hexToRgba(block.backgroundColor, block.backgroundOpacity),
+          border: `${block.borderWidth}px solid ${block.borderColor}`,
+          borderRadius: `${block.borderRadius}px`,
+          padding: `${block.padding}px`,
+          alignItems: "center",
+          justifyContent: block.align === "left" ? "flex-start" : block.align === "center" ? "center" : "flex-end",
+          textAlign: block.align,
+        }}
+      >
+        <div
+          style={{
+            width: "100%",
+            color: block.color,
+            fontSize: `${block.fontSize}px`,
+            fontWeight: block.bold ? 700 : 400,
+            fontStyle: block.italic ? "italic" : "normal",
+            lineHeight: block.lineHeight,
+            textTransform: block.uppercase ? "uppercase" : "none",
+            whiteSpace: "pre-wrap",
+            wordBreak: "break-word",
+          }}
+        >
+          {block.text}
+        </div>
+      </div>
       <button
         type="button"
-        aria-label="Redimensionar caixa"
+        aria-label="Redimensionar bloco"
         className="absolute bottom-0 right-0 h-4 w-4 translate-x-1/2 translate-y-1/2 cursor-nwse-resize rounded-sm border border-white bg-secondary"
         onPointerDown={(event) => {
           event.stopPropagation();
           event.currentTarget.setPointerCapture(event.pointerId);
-          onStart(layer, "resize");
+          onSelect();
+          onStart(block.id, "resize");
         }}
       />
+      {selected && (
+        <div className="pointer-events-none absolute -top-6 left-0 rounded bg-secondary px-2 py-1 text-[10px] font-bold text-secondary-foreground">
+          <Type className="inline h-3 w-3 mr-1" /> Bloco selecionado
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FieldNumber({ label, value, onChange, step = 1, min, max }: { label: string; value: number; onChange: (value: number) => void; step?: number; min?: number; max?: number }) {
+  return (
+    <div>
+      <Label>{label}</Label>
+      <Input type="number" step={step} min={min} max={max} value={value} onChange={(e) => onChange(Number(e.target.value) || 0)} />
+    </div>
+  );
+}
+
+function FieldColor({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <div>
+      <Label>{label}</Label>
+      <Input type="color" value={value} onChange={(e) => onChange(e.target.value)} />
     </div>
   );
 }
@@ -479,92 +622,74 @@ function loadImage(src: string) {
   });
 }
 
-async function renderCoverToCanvas(args: {
-  imageDataUrl: string;
-  titleLine1: string;
-  titleLine2: string;
-  titleLine3: string;
-  subtitle: string;
-  tagline: string;
-  boxes: TextLayerBoxes;
-}) {
+async function renderCoverToCanvas(args: { imageDataUrl: string; blocks: TextBlock[] }) {
   const img = await loadImage(args.imageDataUrl);
   const canvas = document.createElement("canvas");
   canvas.width = 1055;
   canvas.height = 1491;
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Não foi possível gerar o PDF.");
-
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-  drawTitleBlock(ctx, args.boxes.title, args.titleLine1, args.titleLine2, args.titleLine3);
-  drawSubtitle(ctx, args.boxes.subtitle, args.subtitle);
-  drawTagline(ctx, args.boxes.tagline, args.tagline);
-
+  args.blocks.forEach((block) => drawBlock(ctx, block));
   return canvas;
 }
 
-function drawTitleBlock(ctx: CanvasRenderingContext2D, box: TextLayerBox, line1: string, line2: string, line3: string) {
-  const x = pct(box.x, 1055) + pct(box.width, 1055) / 2;
-  const y = pct(box.y, 1491);
-  const maxWidth = pct(box.width, 1055);
-  const lineHeight = pct(box.height, 1491) / 3;
-  const fontSize = Math.max(24, Math.min(92, lineHeight * 0.88));
-  ctx.textAlign = "center";
+function drawBlock(ctx: CanvasRenderingContext2D, block: TextBlock) {
+  const x = pct(block.x, 1055);
+  const y = pct(block.y, 1491);
+  const w = pct(block.width, 1055);
+  const h = pct(block.height, 1491);
+  const pad = block.padding;
+
+  if (block.backgroundOpacity > 0 || block.borderWidth > 0) {
+    drawRoundRect(ctx, x, y, w, h, block.borderRadius, hexToRgba(block.backgroundColor, block.backgroundOpacity), block.borderColor, block.borderWidth);
+  }
+
+  ctx.save();
+  ctx.fillStyle = block.color;
+  ctx.font = `${block.italic ? "italic " : ""}${block.bold ? "700 " : "400 "}${block.fontSize}px Arial`;
+  ctx.textAlign = block.align;
   ctx.textBaseline = "top";
-  ctx.font = `900 ${fontSize}px Arial`;
-  ctx.lineWidth = Math.max(4, fontSize * 0.08);
-  [
-    [line1, "#ffffff", y],
-    [line2, "#ffc400", y + lineHeight],
-    [line3, "#ffffff", y + lineHeight * 2],
-  ].forEach(([text, color, top]) => {
-    ctx.strokeStyle = "rgba(0,0,0,0.62)";
-    ctx.fillStyle = String(color);
-    ctx.strokeText(String(text), x, Number(top), maxWidth);
-    ctx.fillText(String(text), x, Number(top), maxWidth);
+
+  const text = block.uppercase ? block.text.toUpperCase() : block.text;
+  const lines = wrapText(ctx, text, w - pad * 2);
+  const lineHeight = block.fontSize * block.lineHeight;
+  const totalTextH = lines.length * lineHeight;
+  let startY = y + pad;
+  if (totalTextH < h - pad * 2) startY = y + (h - totalTextH) / 2;
+  const textX = block.align === "left" ? x + pad : block.align === "center" ? x + w / 2 : x + w - pad;
+  const maxWidth = w - pad * 2;
+
+  lines.forEach((line, index) => {
+    const lineY = startY + index * lineHeight;
+    ctx.lineWidth = Math.max(2, block.fontSize * 0.06);
+    ctx.strokeStyle = "rgba(0,0,0,0.55)";
+    ctx.strokeText(line, textX, lineY, maxWidth);
+    ctx.fillText(line, textX, lineY, maxWidth);
   });
+
+  ctx.restore();
 }
 
-function drawSubtitle(ctx: CanvasRenderingContext2D, box: TextLayerBox, text: string) {
-  const x = pct(box.x, 1055) + pct(box.width, 1055) / 2;
-  const y = pct(box.y, 1491) + pct(box.height, 1491) / 2;
-  const maxWidth = pct(box.width, 1055);
-  const h = pct(box.height, 1491);
-  const fontSize = Math.max(18, Math.min(54, h * 0.55));
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.font = `900 ${fontSize}px Arial`;
-  roundRect(ctx, pct(box.x, 1055), pct(box.y, 1491), maxWidth, h, 16, "rgba(4,27,63,.68)", "#ffc400", 4);
-  ctx.fillStyle = "#ffc400";
-  ctx.fillText(text, x, y + 2, maxWidth - 30);
+function wrapText(ctx: CanvasRenderingContext2D, text: string, maxWidth: number) {
+  const result: string[] = [];
+  text.split("\n").forEach((paragraph) => {
+    const words = paragraph.split(" ");
+    let line = "";
+    words.forEach((word) => {
+      const test = line ? `${line} ${word}` : word;
+      if (ctx.measureText(test).width <= maxWidth || !line) line = test;
+      else {
+        result.push(line);
+        line = word;
+      }
+    });
+    result.push(line);
+  });
+  return result;
 }
 
-function drawTagline(ctx: CanvasRenderingContext2D, box: TextLayerBox, text: string) {
-  const x = pct(box.x, 1055) + pct(box.width, 1055) / 2;
-  const y = pct(box.y, 1491) + pct(box.height, 1491) / 2;
-  const maxWidth = pct(box.width, 1055);
-  const fontSize = Math.max(14, Math.min(36, pct(box.height, 1491) * 0.62));
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.font = `700 ${fontSize}px Arial`;
-  ctx.lineWidth = Math.max(2, fontSize * 0.08);
-  ctx.strokeStyle = "rgba(0,0,0,.55)";
-  ctx.fillStyle = "#ffffff";
-  ctx.strokeText(text, x, y, maxWidth);
-  ctx.fillText(text, x, y, maxWidth);
-}
-
-function roundRect(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number,
-  fill: string,
-  stroke: string,
-  lineWidth: number,
-) {
+function drawRoundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number, fill: string, stroke: string, lineWidth: number) {
   ctx.beginPath();
   ctx.moveTo(x + radius, y);
   ctx.lineTo(x + width - radius, y);
@@ -578,9 +703,11 @@ function roundRect(
   ctx.closePath();
   ctx.fillStyle = fill;
   ctx.fill();
-  ctx.strokeStyle = stroke;
-  ctx.lineWidth = lineWidth;
-  ctx.stroke();
+  if (lineWidth > 0) {
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = lineWidth;
+    ctx.stroke();
+  }
 }
 
 function pct(value: number, total: number) {
@@ -593,4 +720,13 @@ function clamp(value: number, min: number, max: number) {
 
 function slug(s: string) {
   return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "capa";
+}
+
+function hexToRgba(hex: string, alpha: number) {
+  const normalized = hex.replace("#", "");
+  const bigint = Number.parseInt(normalized, 16);
+  const r = (bigint >> 16) & 255;
+  const g = (bigint >> 8) & 255;
+  const b = bigint & 255;
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
