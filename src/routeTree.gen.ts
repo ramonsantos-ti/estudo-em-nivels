@@ -74,9 +74,21 @@ export interface FileRoutesById {
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/covers' | '/export' | '/notebooks' | '/questions' | '/questions-list'
+  fullPaths:
+    | '/'
+    | '/covers'
+    | '/export'
+    | '/notebooks'
+    | '/questions'
+    | '/questions-list'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/covers' | '/export' | '/notebooks' | '/questions' | '/questions-list'
+  to:
+    | '/'
+    | '/covers'
+    | '/export'
+    | '/notebooks'
+    | '/questions'
+    | '/questions-list'
   id:
     | '__root__'
     | '/'
@@ -98,13 +110,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/notebooks': {
-      id: '/notebooks'
-      path: '/notebooks'
-      fullPath: '/notebooks'
-      preLoaderRoute: typeof NotebooksRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/questions-list': {
       id: '/questions-list'
       path: '/questions-list'
@@ -117,6 +122,13 @@ declare module '@tanstack/react-router' {
       path: '/questions'
       fullPath: '/questions'
       preLoaderRoute: typeof QuestionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notebooks': {
+      id: '/notebooks'
+      path: '/notebooks'
+      fullPath: '/notebooks'
+      preLoaderRoute: typeof NotebooksRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/export': {
