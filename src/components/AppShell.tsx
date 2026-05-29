@@ -15,7 +15,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </Link>
           <nav className="flex items-center gap-1 text-sm font-medium">
             <NavLink to="/">Temas</NavLink>
-            <NavLink to="/questions">Questões</NavLink>
+            <NavLink to="/questions">Cadastrar questões</NavLink>
+            <NavLink to="/questions-list">Listar questões</NavLink>
             <NavLink to="/export">Exportar</NavLink>
           </nav>
         </div>
