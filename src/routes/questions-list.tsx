@@ -41,6 +41,8 @@ function QuestionsListPage() {
   const [subthemeId, setSubthemeId] = useState("all");
   const [level, setLevel] = useState("all");
   const [search, setSearch] = useState("");
+  const [updatedStart, setUpdatedStart] = useState("");
+  const [updatedEnd, setUpdatedEnd] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<Form | null>(null);
 
@@ -65,7 +67,7 @@ function QuestionsListPage() {
   }, [themes.data, selectedTheme?.subthemes, themeId]);
 
   const questions = useQuery({
-    queryKey: ["questions-list", themeId, subthemeId, level, search],
+    queryKey: ["questions-list", themeId, subthemeId, level, search, updatedStart, updatedEnd],
     queryFn: async () => {
       let q = supabase
         .from("questions")
@@ -82,9 +84,12 @@ function QuestionsListPage() {
       if (error) throw error;
 
       const needle = normalize(search);
-      if (!needle) return data ?? [];
-
       return (data ?? []).filter((item: any) => {
+        const updatedDate = questionUpdatedDate(item);
+        if (updatedStart && (!updatedDate || updatedDate < updatedStart)) return false;
+        if (updatedEnd && (!updatedDate || updatedDate > updatedEnd)) return false;
+
+        if (!needle) return true;
         const haystack = normalize([
           item.number,
           item.intro,
@@ -130,6 +135,7 @@ function QuestionsListPage() {
         exp_c: form.exp_c || null,
         exp_d: form.exp_d || null,
         exp_e: form.exp_e || null,
+        updated_until: todayISODate(),
       };
       const { error } = await supabase.from("questions").update(payload).eq("id", editingId);
       if (error) throw error;
@@ -171,6 +177,15 @@ function QuestionsListPage() {
   function cancelEdit() {
     setEditingId(null);
     setForm(null);
+  }
+
+  function clearFilters() {
+    setThemeId("all");
+    setSubthemeId("all");
+    setLevel("all");
+    setSearch("");
+    setUpdatedStart("");
+    setUpdatedEnd("");
   }
 
   return (
@@ -269,7 +284,7 @@ function QuestionsListPage() {
         <Card>
           <CardHeader><CardTitle>Filtros</CardTitle></CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid gap-3 md:grid-cols-4">
+            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
               <div>
                 <Label>Tema</Label>
                 <Select value={themeId} onValueChange={handleThemeChange}>
@@ -310,9 +325,20 @@ function QuestionsListPage() {
                 </div>
               </div>
             </div>
-            <Button variant="outline" onClick={() => { setThemeId("all"); setSubthemeId("all"); setLevel("all"); setSearch(""); }}>
-              Limpar filtros
-            </Button>
+
+            <div className="grid gap-3 md:grid-cols-[1fr_1fr_auto] md:items-end">
+              <div>
+                <Label>Atualizada até — data inicial</Label>
+                <Input type="date" value={updatedStart} onChange={(e) => setUpdatedStart(e.target.value)} />
+              </div>
+              <div>
+                <Label>Atualizada até — data final</Label>
+                <Input type="date" value={updatedEnd} onChange={(e) => setUpdatedEnd(e.target.value)} />
+              </div>
+              <Button variant="outline" onClick={clearFilters}>
+                Limpar filtros
+              </Button>
+            </div>
           </CardContent>
         </Card>
 
@@ -335,7 +361,7 @@ function QuestionsListPage() {
                       <Badge className="bg-primary text-primary-foreground">Nível {q.level}</Badge>
                       {q.number && <Badge variant="outline">Q{q.number}</Badge>}
                       <Badge className="bg-secondary text-secondary-foreground">Gab: {q.correct}</Badge>
-                      <Badge variant="outline">Atualizada até: {formatDate(q.updated_until || q.created_at)}</Badge>
+                      <Badge variant="outline">Atualizada até: {formatDate(questionUpdatedDate(q))}</Badge>
                       <span className="text-xs text-muted-foreground">{q.themes?.name}{q.subthemes?.name ? ` › ${q.subthemes.name}` : ""}</span>
                     </div>
                     {q.intro && <p className="text-sm text-muted-foreground line-clamp-2">{q.intro}</p>}
@@ -376,7 +402,7 @@ function rowToForm(q: any): Form {
     exp_c: q.exp_c ?? "",
     exp_d: q.exp_d ?? "",
     exp_e: q.exp_e ?? "",
-    updated_until: q.updated_until ?? q.created_at?.slice(0, 10) ?? todayISODate(),
+    updated_until: questionUpdatedDate(q) || todayISODate(),
   };
 }
 
@@ -386,6 +412,10 @@ function normalize(value: string) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim();
+}
+
+function questionUpdatedDate(q: any) {
+  return (q.updated_until || q.updated_at || q.created_at || "").slice(0, 10);
 }
 
 function formatDate(value: string) {
