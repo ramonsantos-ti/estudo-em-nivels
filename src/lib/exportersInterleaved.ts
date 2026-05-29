@@ -34,13 +34,10 @@ const LIGHT_BLUE = "F8FBFF";
 const BG_QUESTAO_URL = "/templates/bg-questao.png";
 const BG_GABARITO_URL = "/templates/bg-gabarito.png";
 
-// Margens em twips. Aumentei a margem superior do gabarito para respeitar melhor o cabeçalho
-// da imagem de fundo e reduzi as margens laterais para aproveitar melhor a largura da página.
 const DOCX_QUESTION_MARGIN = { top: 1650, bottom: 850, left: 520, right: 520 };
 const DOCX_ANSWER_MARGIN = { top: 1950, bottom: 850, left: 520, right: 520 };
 const DOCX_FULL_PAGE_MARGIN = { top: 0, bottom: 0, left: 0, right: 0 };
 
-// Área útil do PDF. O gabarito começa mais abaixo para não invadir o cabeçalho.
 const PDF_SAFE_QUESTION = { top: 124, bottom: 64, left: 30, right: 30 };
 const PDF_SAFE_ANSWER = { top: 158, bottom: 58, left: 30, right: 30 };
 
@@ -61,11 +58,16 @@ function cleanText(value: string | null | undefined) {
     .replace(/\r\n?/g, "\n")
     .replace(/[\t\f\v]+/g, " ")
     .replace(/\u00a0/g, " ")
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
     .replace(/\n{2,}/g, " ¶¶ ")
     .replace(/\s*\n\s*/g, " ")
     .replace(/\s{2,}/g, " ")
     .replace(/ ¶¶ /g, "\n\n")
     .trim();
+}
+
+function cleanInlineText(value: string | null | undefined) {
+  return cleanText(value).replace(/\s*\n+\s*/g, " ").replace(/\s{2,}/g, " ").trim();
 }
 
 function inferImageType(source: string): ImageType {
@@ -100,11 +102,11 @@ function slug(s: string) {
 function questionNumber(q: QuestionRow, index: number) { return q.number ?? index + 1; }
 function letterAlternatives(q: QuestionRow) {
   return [
-    { letter: "A", text: cleanText(q.alt_a), exp: cleanText(q.exp_a) },
-    { letter: "B", text: cleanText(q.alt_b), exp: cleanText(q.exp_b) },
-    { letter: "C", text: cleanText(q.alt_c), exp: cleanText(q.exp_c) },
-    { letter: "D", text: cleanText(q.alt_d), exp: cleanText(q.exp_d) },
-    { letter: "E", text: cleanText(q.alt_e), exp: cleanText(q.exp_e) },
+    { letter: "A", text: cleanInlineText(q.alt_a), exp: cleanInlineText(q.exp_a) },
+    { letter: "B", text: cleanInlineText(q.alt_b), exp: cleanInlineText(q.exp_b) },
+    { letter: "C", text: cleanInlineText(q.alt_c), exp: cleanInlineText(q.exp_c) },
+    { letter: "D", text: cleanInlineText(q.alt_d), exp: cleanInlineText(q.exp_d) },
+    { letter: "E", text: cleanInlineText(q.alt_e), exp: cleanInlineText(q.exp_e) },
   ];
 }
 function groupedByLevel(questions: QuestionRow[]) {
@@ -168,8 +170,8 @@ function docxQuestionLabelBlock(num: number): Table {
   return new Table({ width: { size: 98, type: WidthType.PERCENTAGE }, alignment: AlignmentType.CENTER, borders: tableBorders(BORDER_BLUE), rows: [new TableRow({ children: [new TableCell({ shading: { fill: WHITE }, borders: tableBorders(BORDER_BLUE), margins: { top: 90, bottom: 90, left: 140, right: 140 }, verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "▤", bold: true, size: 21, color: NAVY_TEXT }), new TextRun({ text: `  QUESTÃO ${num}`, bold: true, size: 22, color: NAVY_TEXT })] })] })] })] });
 }
 function docxQuestionPromptBlock(q: QuestionRow): Table {
-  const intro = cleanText(q.intro);
-  const command = cleanText(q.command);
+  const intro = cleanInlineText(q.intro);
+  const command = cleanInlineText(q.command);
   return new Table({ width: { size: 98, type: WidthType.PERCENTAGE }, alignment: AlignmentType.CENTER, borders: tableBorders(BORDER_BLUE), rows: [new TableRow({ children: [new TableCell({ shading: { fill: WHITE }, borders: tableBorders(BORDER_BLUE), margins: { top: 200, bottom: 200, left: 105, right: 105 }, verticalAlign: VerticalAlign.CENTER, children: [...(intro ? [new Paragraph({ alignment: AlignmentType.JUSTIFIED, spacing: { after: 110, line: 345 }, children: [new TextRun({ text: intro, size: 24, color: NAVY_TEXT })] })] : []), new Paragraph({ alignment: AlignmentType.JUSTIFIED, spacing: { line: 355 }, children: [new TextRun({ text: command, bold: true, size: 25, color: NAVY_TEXT })] })] })] })] });
 }
 function docxQuestionAlternativesBlock(q: QuestionRow): Table {
@@ -214,6 +216,12 @@ export async function exportPdfInterleaved(opts: ExportOptions) {
   doc.save(`${slug(opts.title)}.pdf`);
 }
 
+function splitPdfLines(doc: jsPDF, text: string, maxWidth: number, fontSize: number, fontStyle: "normal" | "bold" = "normal") {
+  doc.setFont("helvetica", fontStyle);
+  doc.setFontSize(fontSize);
+  return doc.splitTextToSize(cleanInlineText(text), maxWidth) as string[];
+}
+
 function drawPdfQuestionContent(doc: jsPDF, q: QuestionRow, num: number) {
   const pageW = doc.internal.pageSize.getWidth();
   const safe = PDF_SAFE_QUESTION;
@@ -229,18 +237,23 @@ function drawPdfQuestionContent(doc: jsPDF, q: QuestionRow, num: number) {
   doc.setFillColor(255,255,255); doc.setDrawColor(...borderBlue); doc.roundedRect(blockX, y, blockW, 42, 10, 10, "FD");
   doc.setFont("helvetica", "bold"); doc.setFontSize(14.8); doc.setTextColor(...navyText); doc.text(`QUESTÃO ${num}`, pageW/2, y + 26, { align: "center" });
   y += 54;
-  const promptText = [cleanText(q.intro), cleanText(q.command)].filter(Boolean).join("\n\n");
+
   const promptFontSize = 12.2;
-  const promptLines = doc.splitTextToSize(promptText, blockW - 24) as string[];
+  const intro = cleanInlineText(q.intro);
+  const command = cleanInlineText(q.command);
+  const promptText = [intro, command].filter(Boolean).join(" ");
+  const promptMaxW = blockW - 24;
+  const promptLines = splitPdfLines(doc, promptText, promptMaxW, promptFontSize, "normal");
   const promptH = Math.max(92, promptLines.length * 15.4 + 30);
   doc.setFillColor(255,255,255); doc.setDrawColor(...borderBlue); doc.roundedRect(blockX, y, blockW, promptH, 10, 10, "FD");
   doc.setFont("helvetica", "normal"); doc.setFontSize(promptFontSize); doc.setTextColor(...navyText); doc.text(promptLines, blockX + 12, y + 24);
   y += promptH + 14;
+
   doc.setFillColor(248,251,255); doc.setDrawColor(...borderBlue); doc.roundedRect(blockX, y, blockW, 430, 10, 10, "FD");
   y += 16;
   letterAlternatives(q).forEach((alt) => {
     const altFontSize = 11.2;
-    const lines = doc.splitTextToSize(alt.text, blockW - 74) as string[];
+    const lines = splitPdfLines(doc, alt.text, blockW - 74, altFontSize, "normal");
     const h = Math.max(54, lines.length * 13.8 + 22);
     doc.setFillColor(255,255,255); doc.setDrawColor(...borderGray); doc.roundedRect(blockX + 8, y, blockW - 16, h, 8, 8, "FD");
     doc.setFillColor(...navy); doc.circle(blockX + 34, y + 24, 15, "F");
@@ -248,6 +261,46 @@ function drawPdfQuestionContent(doc: jsPDF, q: QuestionRow, num: number) {
     doc.setFont("helvetica", "normal"); doc.setFontSize(altFontSize); doc.setTextColor(...navyText); doc.text(lines, blockX + 58, y + 20);
     y += h + 9;
   });
+}
+
+function drawAnswerExplanation(doc: jsPDF, args: { label: string; body: string; x: number; y: number; maxWidth: number; fontSize: number; labelColor: [number, number, number]; bodyColor: [number, number, number]; maxLines: number }) {
+  const { label, body, x, y, maxWidth, fontSize, labelColor, bodyColor, maxLines } = args;
+  const cleanBody = cleanInlineText(body || "—");
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(fontSize);
+  const labelWidth = doc.getTextWidth(label);
+  const firstLineBodyWidth = Math.max(40, maxWidth - labelWidth);
+  const words = cleanBody.split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+  let currentMaxWidth = firstLineBodyWidth;
+
+  words.forEach((word) => {
+    const test = current ? `${current} ${word}` : word;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(fontSize);
+    if (doc.getTextWidth(test) <= currentMaxWidth || !current) {
+      current = test;
+      return;
+    }
+    lines.push(current);
+    current = word;
+    currentMaxWidth = maxWidth;
+  });
+  if (current) lines.push(current);
+
+  const visible = lines.slice(0, maxLines);
+  const lineStep = fontSize + 2.4;
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(fontSize);
+  doc.setTextColor(...labelColor);
+  doc.text(label, x, y);
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(fontSize);
+  doc.setTextColor(...bodyColor);
+  if (visible[0]) doc.text(visible[0], x + labelWidth, y);
+  visible.slice(1).forEach((line, index) => doc.text(line, x, y + (index + 1) * lineStep));
+  return { lines: Math.max(1, visible.length), lineStep };
 }
 
 function drawPdfAnswerContent(doc: jsPDF, q: QuestionRow, num: number) {
@@ -276,14 +329,15 @@ function drawPdfAnswerContent(doc: jsPDF, q: QuestionRow, num: number) {
     const isCorrect = alt.letter === q.correct;
     const label = isCorrect ? "Correta: " : "Incorreta: ";
     const answerFontSize = 10.8;
-    const lines = doc.splitTextToSize(`${label}${alt.exp || "—"}`, blockW - 78) as string[];
-    const visibleLines = lines.slice(0, 6);
-    const h = Math.max(74, visibleLines.length * 13.2 + 24);
+    const maxTextW = blockW - 78;
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(answerFontSize);
+    const estimatedLines = splitPdfLines(doc, `${label}${alt.exp || "—"}`, maxTextW, answerFontSize, "normal").slice(0, 6);
+    const h = Math.max(74, estimatedLines.length * 13.2 + 24);
     doc.setFillColor(255,255,255); doc.setDrawColor(...borderGray); doc.roundedRect(blockX + 8, y, blockW - 16, h, 8, 8, "FD");
     doc.setFillColor(...(isCorrect ? green : navy)); doc.circle(blockX + 34, y + 24, 16, "F");
     doc.setFont("helvetica", "bold"); doc.setFontSize(18.5); doc.setTextColor(255,255,255); doc.text(alt.letter, blockX + 34, y + 30, { align: "center" });
-    doc.setFontSize(answerFontSize); doc.setTextColor(...(isCorrect ? green : red)); doc.text(label, blockX + 58, y + 18);
-    doc.setFont("helvetica", "normal"); doc.setFontSize(answerFontSize); doc.setTextColor(...navyText); doc.text(visibleLines, blockX + 58, y + 32);
+    drawAnswerExplanation(doc, { label, body: alt.exp || "—", x: blockX + 58, y: y + 22, maxWidth: maxTextW, fontSize: answerFontSize, labelColor: isCorrect ? green : red, bodyColor: navyText, maxLines: 6 });
     y += h + 8;
   });
 }
