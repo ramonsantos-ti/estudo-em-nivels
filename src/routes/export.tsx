@@ -26,6 +26,14 @@ type NotebookModel = {
   created_at?: string;
 };
 
+type LevelPage = {
+  id: string;
+  level: number;
+  name: string;
+  page_data_url: string;
+  created_at?: string;
+};
+
 function ExportPage() {
   const [title, setTitle] = useState("Caderno de Questões");
   const [notebookId, setNotebookId] = useState<string>("none");
@@ -52,6 +60,18 @@ function ExportPage() {
     },
   });
 
+  const levelPages = useQuery({
+    queryKey: ["level-pages-export"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any)
+        .from("level_pages")
+        .select("id, level, name, page_data_url, created_at")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as LevelPage[];
+    },
+  });
+
   const selectedNotebook = useMemo(
     () => notebooks.data?.find((item) => item.id === notebookId) ?? null,
     [notebooks.data, notebookId]
@@ -61,6 +81,14 @@ function ExportPage() {
     () => themes.data?.find((t: any) => t.id === themeId),
     [themes.data, themeId]
   );
+
+  const latestLevelPages = useMemo(() => {
+    const map: Record<number, LevelPage | undefined> = {};
+    for (const page of levelPages.data ?? []) {
+      if (!map[page.level]) map[page.level] = page;
+    }
+    return map;
+  }, [levelPages.data]);
 
   const availableSubthemes = useMemo(() => {
     if (themeId === "all") {
@@ -110,10 +138,16 @@ function ExportPage() {
         includeAnswers,
         questionBackgroundDataUrl: selectedNotebook?.question_bg_data_url,
         answerBackgroundDataUrl: selectedNotebook?.answer_bg_data_url,
+        levelPageDataUrls: {
+          1: latestLevelPages[1]?.page_data_url,
+          2: latestLevelPages[2]?.page_data_url,
+          3: latestLevelPages[3]?.page_data_url,
+          4: latestLevelPages[4]?.page_data_url,
+        },
       };
       if (format === "docx") await exportDocxInterleaved(opts);
       else await exportPdfInterleaved(opts);
-      toast.success(`Arquivo ${format.toUpperCase()} gerado!`);
+      toast.success(`Arquivo(s) ${format.toUpperCase()} gerado(s) por nível!`);
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -126,7 +160,7 @@ function ExportPage() {
       <div className="max-w-6xl mx-auto space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-primary">Exportar ebook</h1>
-          <p className="text-muted-foreground">Gere um arquivo DOCX ou PDF com a lógica questão → gabarito comentado.</p>
+          <p className="text-muted-foreground">Gere arquivos DOCX ou PDF separados por nível, com a lógica questão → gabarito comentado.</p>
         </div>
 
         <div className="grid gap-6 lg:grid-cols-[1fr_420px] lg:items-start">
@@ -157,7 +191,7 @@ function ExportPage() {
                 </div>
 
                 <div>
-                  <Label>Título do caderno</Label>
+                  <Label>Título base dos arquivos</Label>
                   <Input value={title} onChange={(e) => setTitle(e.target.value)} />
                 </div>
                 <div className="grid grid-cols-2 gap-3">
@@ -209,35 +243,50 @@ function ExportPage() {
                 <div className="text-xs text-muted-foreground mt-1 flex gap-4">
                   {byLevel.map((b) => <span key={b.lv}>Nível {b.lv}: <strong>{b.n}</strong></span>)}
                 </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Será gerado um arquivo separado para cada nível que possuir questões selecionadas.
+                </p>
               </CardContent>
             </Card>
 
             <div className="flex gap-3">
               <Button onClick={() => handle("docx")} disabled={busy !== null} className="bg-primary hover:bg-primary/90 flex-1">
-                <FileText className="h-4 w-4 mr-2" /> {busy === "docx" ? "Gerando..." : "Exportar DOCX"}
+                <FileText className="h-4 w-4 mr-2" /> {busy === "docx" ? "Gerando..." : "Exportar DOCX por nível"}
               </Button>
               <Button onClick={() => handle("pdf")} disabled={busy !== null} variant="outline" className="border-primary text-primary flex-1">
-                <FileDown className="h-4 w-4 mr-2" /> {busy === "pdf" ? "Gerando..." : "Exportar PDF"}
+                <FileDown className="h-4 w-4 mr-2" /> {busy === "pdf" ? "Gerando..." : "Exportar PDF por nível"}
               </Button>
             </div>
           </div>
 
           <Card className="lg:sticky lg:top-6">
-            <CardHeader><CardTitle>Conferência do par selecionado</CardTitle></CardHeader>
-            <CardContent>
-              {selectedNotebook ? (
-                <div className="space-y-3">
-                  <div className="text-sm font-medium text-primary">{selectedNotebook.name}</div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <NotebookPreview title="Questão" image={selectedNotebook.question_bg_data_url} />
-                    <NotebookPreview title="Gabarito" image={selectedNotebook.answer_bg_data_url} />
+            <CardHeader><CardTitle>Conferência da exportação</CardTitle></CardHeader>
+            <CardContent className="space-y-5">
+              <div>
+                <div className="mb-2 text-sm font-semibold text-primary">Par de imagens</div>
+                {selectedNotebook ? (
+                  <div className="space-y-3">
+                    <div className="text-sm font-medium text-primary">{selectedNotebook.name}</div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <NotebookPreview title="Questão" image={selectedNotebook.question_bg_data_url} />
+                      <NotebookPreview title="Gabarito" image={selectedNotebook.answer_bg_data_url} />
+                    </div>
                   </div>
+                ) : (
+                  <div className="rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
+                    Fundo padrão do sistema será usado para questão e gabarito.
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="mb-2 text-sm font-semibold text-primary">Páginas de abertura por nível</div>
+                <div className="grid grid-cols-2 gap-3">
+                  {[1, 2, 3, 4].map((lv) => (
+                    <LevelPagePreview key={lv} level={lv} image={latestLevelPages[lv]?.page_data_url} name={latestLevelPages[lv]?.name} count={byLevel.find((b) => b.lv === lv)?.n ?? 0} />
+                  ))}
                 </div>
-              ) : (
-                <div className="rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
-                  Selecione um par de imagens para conferir, lado a lado, o fundo da questão e o fundo do gabarito que serão usados no arquivo.
-                </div>
-              )}
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -253,6 +302,27 @@ function NotebookPreview({ title, image }: { title: string; image: string }) {
       <div className="aspect-[1055/1491] overflow-hidden rounded-lg border bg-muted shadow-sm">
         <img src={image} alt={`Fundo - ${title}`} className="h-full w-full object-fill" />
       </div>
+    </div>
+  );
+}
+
+function LevelPagePreview({ level, image, name, count }: { level: number; image?: string; name?: string; count: number }) {
+  return (
+    <div className="rounded-md border bg-muted/20 p-2">
+      <div className="mb-2 text-center text-xs font-semibold text-primary">Nível {level}</div>
+      {image ? (
+        <div className="space-y-1">
+          <div className="aspect-[1055/1491] overflow-hidden rounded border bg-muted">
+            <img src={image} alt={`Página nível ${level}`} className="h-full w-full object-fill" />
+          </div>
+          <div className="line-clamp-1 text-[10px] text-muted-foreground">{name}</div>
+        </div>
+      ) : (
+        <div className="flex aspect-[1055/1491] items-center justify-center rounded border bg-background p-2 text-center text-[10px] text-muted-foreground">
+          Sem página cadastrada
+        </div>
+      )}
+      <div className="mt-1 text-center text-[10px] text-muted-foreground">{count} questão(ões)</div>
     </div>
   );
 }
