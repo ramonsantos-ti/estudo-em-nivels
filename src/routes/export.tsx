@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { exportDocxInterleaved, exportPdfInterleaved } from "@/lib/exportersInterleaved";
-import { FileText, FileDown } from "lucide-react";
+import { FileText, FileDown, X } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/export")({
@@ -34,6 +34,14 @@ type LevelPage = {
   created_at?: string;
 };
 
+type TempCover = {
+  name: string;
+  dataUrl: string;
+  savedAt?: string;
+};
+
+const TEMP_EXPORT_COVER_KEY = "questao-sucesso-export-cover";
+
 function ExportPage() {
   const [title, setTitle] = useState("Caderno de Questões");
   const [notebookId, setNotebookId] = useState<string>("none");
@@ -42,6 +50,26 @@ function ExportPage() {
   const [level, setLevel] = useState<string>("all");
   const [includeAnswers, setIncludeAnswers] = useState(true);
   const [busy, setBusy] = useState<null | "docx" | "pdf">(null);
+  const [tempCover, setTempCover] = useState<TempCover | null>(null);
+  const [levelPageSelections, setLevelPageSelections] = useState<Record<number, string>>({ 1: "auto", 2: "auto", 3: "auto", 4: "auto" });
+
+  useEffect(() => {
+    function readCover() {
+      try {
+        const raw = localStorage.getItem(TEMP_EXPORT_COVER_KEY);
+        setTempCover(raw ? JSON.parse(raw) as TempCover : null);
+      } catch {
+        setTempCover(null);
+      }
+    }
+    readCover();
+    window.addEventListener("storage", readCover);
+    window.addEventListener("focus", readCover);
+    return () => {
+      window.removeEventListener("storage", readCover);
+      window.removeEventListener("focus", readCover);
+    };
+  }, []);
 
   const themes = useQuery({
     queryKey: ["themes-list-export"],
@@ -82,13 +110,22 @@ function ExportPage() {
     [themes.data, themeId]
   );
 
-  const latestLevelPages = useMemo(() => {
-    const map: Record<number, LevelPage | undefined> = {};
-    for (const page of levelPages.data ?? []) {
-      if (!map[page.level]) map[page.level] = page;
-    }
+  const levelPagesByLevel = useMemo(() => {
+    const map: Record<number, LevelPage[]> = { 1: [], 2: [], 3: [], 4: [] };
+    for (const page of levelPages.data ?? []) map[page.level]?.push(page);
     return map;
   }, [levelPages.data]);
+
+  const selectedLevelPages = useMemo(() => {
+    const map: Record<number, LevelPage | undefined> = {};
+    ([1, 2, 3, 4] as const).forEach((lv) => {
+      const selection = levelPageSelections[lv] ?? "auto";
+      if (selection === "none") return;
+      if (selection === "auto") map[lv] = levelPagesByLevel[lv]?.[0];
+      else map[lv] = levelPagesByLevel[lv]?.find((page) => page.id === selection);
+    });
+    return map;
+  }, [levelPageSelections, levelPagesByLevel]);
 
   const availableSubthemes = useMemo(() => {
     if (themeId === "all") {
@@ -116,13 +153,22 @@ function ExportPage() {
   });
 
   const byLevel = useMemo(() => {
-    const counts = [1, 2, 3, 4].map((lv) => ({ lv, n: questions.data?.filter((x: any) => x.level === lv).length ?? 0 }));
-    return counts;
+    return [1, 2, 3, 4].map((lv) => ({ lv, n: questions.data?.filter((x: any) => x.level === lv).length ?? 0 }));
   }, [questions.data]);
 
   function handleThemeChange(value: string) {
     setThemeId(value);
     setSubthemeId("all");
+  }
+
+  function clearTempCover() {
+    localStorage.removeItem(TEMP_EXPORT_COVER_KEY);
+    setTempCover(null);
+    toast.success("Capa temporária removida da exportação");
+  }
+
+  function updateLevelPageSelection(levelNumber: number, value: string) {
+    setLevelPageSelections((current) => ({ ...current, [levelNumber]: value }));
   }
 
   async function handle(format: "docx" | "pdf") {
@@ -136,13 +182,14 @@ function ExportPage() {
         title: title.trim() || "Caderno de Questões",
         questions: questions.data as any,
         includeAnswers,
+        coverDataUrl: tempCover?.dataUrl,
         questionBackgroundDataUrl: selectedNotebook?.question_bg_data_url,
         answerBackgroundDataUrl: selectedNotebook?.answer_bg_data_url,
         levelPageDataUrls: {
-          1: latestLevelPages[1]?.page_data_url,
-          2: latestLevelPages[2]?.page_data_url,
-          3: latestLevelPages[3]?.page_data_url,
-          4: latestLevelPages[4]?.page_data_url,
+          1: selectedLevelPages[1]?.page_data_url,
+          2: selectedLevelPages[2]?.page_data_url,
+          3: selectedLevelPages[3]?.page_data_url,
+          4: selectedLevelPages[4]?.page_data_url,
         },
       };
       if (format === "docx") await exportDocxInterleaved(opts);
@@ -157,172 +204,149 @@ function ExportPage() {
 
   return (
     <AppShell>
-      <div className="max-w-6xl mx-auto space-y-6">
+      <div className="max-w-7xl mx-auto space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-primary">Exportar ebook</h1>
-          <p className="text-muted-foreground">Gere arquivos DOCX ou PDF separados por nível, com a lógica questão → gabarito comentado.</p>
+          <p className="text-muted-foreground">Configure capa, páginas de nível e fundos de questão/gabarito antes de gerar os arquivos por nível.</p>
         </div>
 
-        <div className="grid gap-6 lg:grid-cols-[1fr_420px] lg:items-start">
-          <div className="space-y-6">
-            <Card>
-              <CardHeader><CardTitle>Configuração</CardTitle></CardHeader>
-              <CardContent className="space-y-4">
-                <div>
-                  <Label>Par de imagens para exportação</Label>
-                  <Select value={notebookId} onValueChange={setNotebookId}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Usar fundo padrão</SelectItem>
-                      {notebooks.data?.map((item) => (
-                        <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {selectedNotebook ? (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      As imagens do caderno "{selectedNotebook.name}" serão usadas nas páginas de questão e gabarito exportadas.
-                    </p>
-                  ) : (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      Nenhum par selecionado. A exportação usará os fundos padrão do sistema.
-                    </p>
-                  )}
-                </div>
+        <Card>
+          <CardHeader><CardTitle>Configuração</CardTitle></CardHeader>
+          <CardContent className="space-y-5">
+            <div className="grid gap-4 lg:grid-cols-2">
+              <div>
+                <Label>Par de imagens questão/gabarito</Label>
+                <Select value={notebookId} onValueChange={setNotebookId}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Usar fundo padrão</SelectItem>
+                    {notebooks.data?.map((item) => (
+                      <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Título base dos arquivos</Label>
+                <Input value={title} onChange={(e) => setTitle(e.target.value)} />
+              </div>
+            </div>
 
-                <div>
-                  <Label>Título base dos arquivos</Label>
-                  <Input value={title} onChange={(e) => setTitle(e.target.value)} />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <Label>Tema</Label>
-                    <Select value={themeId} onValueChange={handleThemeChange}>
+            <div>
+              <Label>Imagens de abertura dos níveis</Label>
+              <div className="mt-2 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                {[1, 2, 3, 4].map((lv) => (
+                  <div key={lv}>
+                    <Label className="text-xs">Nível {lv}</Label>
+                    <Select value={levelPageSelections[lv] ?? "auto"} onValueChange={(value) => updateLevelPageSelection(lv, value)}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="all">Todos os temas</SelectItem>
-                        {themes.data?.map((t: any) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label>Subtema</Label>
-                    <Select value={subthemeId} onValueChange={setSubthemeId} disabled={availableSubthemes.length === 0}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todos os subtemas</SelectItem>
-                        {availableSubthemes.map((s: any) => (
-                          <SelectItem key={s.id} value={s.id}>
-                            {themeId === "all" && s.themeName ? `${s.themeName} › ${s.name}` : s.name}
-                          </SelectItem>
+                        <SelectItem value="auto">Usar mais recente</SelectItem>
+                        <SelectItem value="none">Não incluir</SelectItem>
+                        {levelPagesByLevel[lv]?.map((page) => (
+                          <SelectItem key={page.id} value={page.id}>{page.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                  <div>
-                    <Label>Nível</Label>
-                    <Select value={level} onValueChange={setLevel}>
-                      <SelectTrigger><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="all">Todos os níveis</SelectItem>
-                        {[1, 2, 3, 4].map((n) => <SelectItem key={n} value={String(n)}>Nível {n}</SelectItem>)}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-                <label className="flex items-center gap-2 cursor-pointer">
-                  <Checkbox checked={includeAnswers} onCheckedChange={(v) => setIncludeAnswers(Boolean(v))} />
-                  <span className="text-sm">Incluir gabarito comentado após cada questão</span>
-                </label>
-              </CardContent>
-            </Card>
-
-            <Card className="bg-muted/40">
-              <CardContent className="py-4">
-                <p className="text-sm font-medium">{questions.data?.length ?? 0} questões selecionadas</p>
-                <div className="text-xs text-muted-foreground mt-1 flex gap-4">
-                  {byLevel.map((b) => <span key={b.lv}>Nível {b.lv}: <strong>{b.n}</strong></span>)}
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Será gerado um arquivo separado para cada nível que possuir questões selecionadas.
-                </p>
-              </CardContent>
-            </Card>
-
-            <div className="flex gap-3">
-              <Button onClick={() => handle("docx")} disabled={busy !== null} className="bg-primary hover:bg-primary/90 flex-1">
-                <FileText className="h-4 w-4 mr-2" /> {busy === "docx" ? "Gerando..." : "Exportar DOCX por nível"}
-              </Button>
-              <Button onClick={() => handle("pdf")} disabled={busy !== null} variant="outline" className="border-primary text-primary flex-1">
-                <FileDown className="h-4 w-4 mr-2" /> {busy === "pdf" ? "Gerando..." : "Exportar PDF por nível"}
-              </Button>
+                ))}
+              </div>
             </div>
-          </div>
 
-          <Card className="lg:sticky lg:top-6">
-            <CardHeader><CardTitle>Conferência da exportação</CardTitle></CardHeader>
-            <CardContent className="space-y-5">
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
               <div>
-                <div className="mb-2 text-sm font-semibold text-primary">Par de imagens</div>
-                {selectedNotebook ? (
-                  <div className="space-y-3">
-                    <div className="text-sm font-medium text-primary">{selectedNotebook.name}</div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <NotebookPreview title="Questão" image={selectedNotebook.question_bg_data_url} />
-                      <NotebookPreview title="Gabarito" image={selectedNotebook.answer_bg_data_url} />
-                    </div>
-                  </div>
-                ) : (
-                  <div className="rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
-                    Fundo padrão do sistema será usado para questão e gabarito.
-                  </div>
-                )}
+                <Label>Tema</Label>
+                <Select value={themeId} onValueChange={handleThemeChange}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os temas</SelectItem>
+                    {themes.data?.map((t: any) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
+              <div>
+                <Label>Subtema</Label>
+                <Select value={subthemeId} onValueChange={setSubthemeId} disabled={availableSubthemes.length === 0}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os subtemas</SelectItem>
+                    {availableSubthemes.map((s: any) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {themeId === "all" && s.themeName ? `${s.themeName} › ${s.name}` : s.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Nível das questões</Label>
+                <Select value={level} onValueChange={setLevel}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os níveis</SelectItem>
+                    {[1, 2, 3, 4].map((n) => <SelectItem key={n} value={String(n)}>Nível {n}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
 
-              <div>
-                <div className="mb-2 text-sm font-semibold text-primary">Páginas de abertura por nível</div>
-                <div className="grid grid-cols-2 gap-3">
-                  {[1, 2, 3, 4].map((lv) => (
-                    <LevelPagePreview key={lv} level={lv} image={latestLevelPages[lv]?.page_data_url} name={latestLevelPages[lv]?.name} count={byLevel.find((b) => b.lv === lv)?.n ?? 0} />
-                  ))}
-                </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Checkbox checked={includeAnswers} onCheckedChange={(v) => setIncludeAnswers(Boolean(v))} />
+              <span className="text-sm">Incluir gabarito comentado após cada questão</span>
+            </label>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader><CardTitle>Conferência da exportação</CardTitle></CardHeader>
+          <CardContent>
+            <div className="overflow-x-auto rounded-md border bg-muted/20 p-3">
+              <div className="flex min-w-max gap-3">
+                <PreviewCard title="Capa" subtitle={tempCover?.name ?? "Nenhuma"} image={tempCover?.dataUrl} emptyText="Sem capa" onClear={tempCover ? clearTempCover : undefined} />
+                {[1, 2, 3, 4].map((lv) => (
+                  <PreviewCard key={lv} title={`Nível ${lv}`} subtitle={`${byLevel.find((b) => b.lv === lv)?.n ?? 0} questão(ões)`} image={selectedLevelPages[lv]?.page_data_url} emptyText="Sem página" />
+                ))}
+                <PreviewCard title="Questão" subtitle={selectedNotebook?.name ?? "Padrão"} image={selectedNotebook?.question_bg_data_url} emptyText="Fundo padrão" />
+                <PreviewCard title="Gabarito" subtitle={selectedNotebook?.name ?? "Padrão"} image={selectedNotebook?.answer_bg_data_url} emptyText="Fundo padrão" />
               </div>
-            </CardContent>
-          </Card>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-muted/40">
+          <CardContent className="py-4">
+            <p className="text-sm font-medium">{questions.data?.length ?? 0} questões selecionadas</p>
+            <div className="text-xs text-muted-foreground mt-1 flex gap-4">
+              {byLevel.map((b) => <span key={b.lv}>Nível {b.lv}: <strong>{b.n}</strong></span>)}
+            </div>
+            <p className="mt-2 text-xs text-muted-foreground">Será gerado um arquivo separado para cada nível que possuir questões selecionadas.</p>
+          </CardContent>
+        </Card>
+
+        <div className="flex gap-3">
+          <Button onClick={() => handle("docx")} disabled={busy !== null} className="bg-primary hover:bg-primary/90 flex-1">
+            <FileText className="h-4 w-4 mr-2" /> {busy === "docx" ? "Gerando..." : "Exportar DOCX por nível"}
+          </Button>
+          <Button onClick={() => handle("pdf")} disabled={busy !== null} variant="outline" className="border-primary text-primary flex-1">
+            <FileDown className="h-4 w-4 mr-2" /> {busy === "pdf" ? "Gerando..." : "Exportar PDF por nível"}
+          </Button>
         </div>
       </div>
     </AppShell>
   );
 }
 
-function NotebookPreview({ title, image }: { title: string; image: string }) {
+function PreviewCard({ title, subtitle, image, emptyText, onClear }: { title: string; subtitle?: string; image?: string; emptyText: string; onClear?: () => void }) {
   return (
-    <div>
-      <div className="mb-2 text-center text-xs font-semibold text-primary">{title}</div>
-      <div className="aspect-[1055/1491] overflow-hidden rounded-lg border bg-muted shadow-sm">
-        <img src={image} alt={`Fundo - ${title}`} className="h-full w-full object-fill" />
+    <div className="w-32 shrink-0 rounded-md border bg-background p-2">
+      <div className="mb-1 flex items-center justify-between gap-1">
+        <div className="text-xs font-semibold text-primary">{title}</div>
+        {onClear && <button type="button" onClick={onClear} className="rounded p-0.5 hover:bg-muted" title="Remover"><X className="h-3 w-3" /></button>}
       </div>
-    </div>
-  );
-}
-
-function LevelPagePreview({ level, image, name, count }: { level: number; image?: string; name?: string; count: number }) {
-  return (
-    <div className="rounded-md border bg-muted/20 p-2">
-      <div className="mb-2 text-center text-xs font-semibold text-primary">Nível {level}</div>
-      {image ? (
-        <div className="space-y-1">
-          <div className="aspect-[1055/1491] overflow-hidden rounded border bg-muted">
-            <img src={image} alt={`Página nível ${level}`} className="h-full w-full object-fill" />
-          </div>
-          <div className="line-clamp-1 text-[10px] text-muted-foreground">{name}</div>
-        </div>
-      ) : (
-        <div className="flex aspect-[1055/1491] items-center justify-center rounded border bg-background p-2 text-center text-[10px] text-muted-foreground">
-          Sem página cadastrada
-        </div>
-      )}
-      <div className="mt-1 text-center text-[10px] text-muted-foreground">{count} questão(ões)</div>
+      <div className="aspect-[1055/1491] overflow-hidden rounded border bg-muted">
+        {image ? <img src={image} alt={title} className="h-full w-full object-fill" /> : <div className="flex h-full w-full items-center justify-center p-2 text-center text-[10px] text-muted-foreground">{emptyText}</div>}
+      </div>
+      <div className="mt-1 line-clamp-2 text-[10px] text-muted-foreground">{subtitle}</div>
     </div>
   );
 }
