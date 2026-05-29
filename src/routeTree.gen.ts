@@ -9,11 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as CoversRouteImport } from './routes/covers'
 import { Route as QuestionsListRouteImport } from './routes/questions-list'
 import { Route as QuestionsRouteImport } from './routes/questions'
 import { Route as ExportRouteImport } from './routes/export'
 import { Route as IndexRouteImport } from './routes/index'
 
+const CoversRoute = CoversRouteImport.update({
+  id: '/covers',
+  path: '/covers',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const QuestionsListRoute = QuestionsListRouteImport.update({
   id: '/questions-list',
   path: '/questions-list',
@@ -37,12 +43,14 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/covers': typeof CoversRoute
   '/export': typeof ExportRoute
   '/questions': typeof QuestionsRoute
   '/questions-list': typeof QuestionsListRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/covers': typeof CoversRoute
   '/export': typeof ExportRoute
   '/questions': typeof QuestionsRoute
   '/questions-list': typeof QuestionsListRoute
@@ -50,20 +58,22 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/covers': typeof CoversRoute
   '/export': typeof ExportRoute
   '/questions': typeof QuestionsRoute
   '/questions-list': typeof QuestionsListRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/export' | '/questions' | '/questions-list'
+  fullPaths: '/' | '/covers' | '/export' | '/questions' | '/questions-list'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/export' | '/questions' | '/questions-list'
-  id: '__root__' | '/' | '/export' | '/questions' | '/questions-list'
+  to: '/' | '/covers' | '/export' | '/questions' | '/questions-list'
+  id: '__root__' | '/' | '/covers' | '/export' | '/questions' | '/questions-list'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CoversRoute: typeof CoversRoute
   ExportRoute: typeof ExportRoute
   QuestionsRoute: typeof QuestionsRoute
   QuestionsListRoute: typeof QuestionsListRoute
@@ -71,6 +81,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/covers': {
+      id: '/covers'
+      path: '/covers'
+      fullPath: '/covers'
+      preLoaderRoute: typeof CoversRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/questions-list': {
       id: '/questions-list'
       path: '/questions-list'
@@ -104,6 +121,7 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CoversRoute: CoversRoute,
   ExportRoute: ExportRoute,
   QuestionsRoute: QuestionsRoute,
   QuestionsListRoute: QuestionsListRoute,
