@@ -219,10 +219,16 @@ function docxQuestionPromptBlock(q: QuestionRow): Table {
     width: { size: 94, type: WidthType.PERCENTAGE },
     alignment: AlignmentType.CENTER,
     borders: tableBorders(BORDER_BLUE),
-    rows: [new TableRow({ children: [new TableCell({ shading: { fill: WHITE }, borders: tableBorders(BORDER_BLUE), margins: { top: 220, bottom: 220, left: 260, right: 260 }, verticalAlign: VerticalAlign.CENTER, children: [
-      ...(q.intro ? [new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 110 }, children: [new TextRun({ text: q.intro, size: 21, color: NAVY_TEXT })] })] : []),
-      new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: q.command, bold: true, size: 22, color: NAVY_TEXT })] }),
-    ] })] })],
+    rows: [new TableRow({ children: [new TableCell({
+      shading: { fill: WHITE },
+      borders: tableBorders(BORDER_BLUE),
+      margins: { top: 220, bottom: 220, left: 140, right: 140 },
+      verticalAlign: VerticalAlign.CENTER,
+      children: [
+        ...(q.intro ? [new Paragraph({ alignment: AlignmentType.JUSTIFIED, spacing: { after: 120, line: 330 }, children: [new TextRun({ text: q.intro, size: 23, color: NAVY_TEXT })] })] : []),
+        new Paragraph({ alignment: AlignmentType.JUSTIFIED, spacing: { line: 340 }, children: [new TextRun({ text: q.command, bold: true, size: 24, color: NAVY_TEXT })] }),
+      ],
+    })] })],
   });
 }
 
@@ -231,10 +237,12 @@ function docxQuestionAlternativesBlock(q: QuestionRow): Table {
     width: { size: 94, type: WidthType.PERCENTAGE },
     alignment: AlignmentType.CENTER,
     borders: tableBorders(BORDER_BLUE),
-    rows: [new TableRow({ children: [new TableCell({ shading: { fill: LIGHT_BLUE }, borders: tableBorders(BORDER_BLUE), margins: { top: 160, bottom: 160, left: 200, right: 200 }, children: [
-      new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 120 }, children: [new TextRun({ text: "ALTERNATIVAS", bold: true, size: 22, color: NAVY_TEXT })] }),
-      ...letterAlternatives(q).map((alt) => docxQuestionAlternative(alt)),
-    ] })] })],
+    rows: [new TableRow({ children: [new TableCell({
+      shading: { fill: LIGHT_BLUE },
+      borders: tableBorders(BORDER_BLUE),
+      margins: { top: 140, bottom: 150, left: 95, right: 95 },
+      children: letterAlternatives(q).map((alt) => docxQuestionAlternative(alt)),
+    })] })],
   });
 }
 
@@ -243,8 +251,8 @@ function docxQuestionAlternative(alt: { letter: string; text: string }): Table {
     width: { size: 100, type: WidthType.PERCENTAGE },
     borders: tableBorders(BORDER_GRAY),
     rows: [new TableRow({ children: [
-      new TableCell({ width: { size: 10, type: WidthType.PERCENTAGE }, verticalAlign: VerticalAlign.CENTER, shading: { fill: NAVY }, margins: { top: 95, bottom: 95, left: 70, right: 70 }, borders: tableBorders(NAVY), children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: alt.letter, bold: true, color: GOLD, size: 22 })] })] }),
-      new TableCell({ width: { size: 90, type: WidthType.PERCENTAGE }, verticalAlign: VerticalAlign.CENTER, shading: { fill: WHITE }, margins: { top: 95, bottom: 95, left: 130, right: 130 }, borders: tableBorders(BORDER_GRAY), children: [new Paragraph({ children: [new TextRun({ text: alt.text, color: NAVY_TEXT, size: 19 })] })] }),
+      new TableCell({ width: { size: 9, type: WidthType.PERCENTAGE }, verticalAlign: VerticalAlign.CENTER, shading: { fill: NAVY }, margins: { top: 92, bottom: 92, left: 60, right: 60 }, borders: tableBorders(NAVY), children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: alt.letter, bold: true, color: GOLD, size: 22 })] })] }),
+      new TableCell({ width: { size: 91, type: WidthType.PERCENTAGE }, verticalAlign: VerticalAlign.CENTER, shading: { fill: WHITE }, margins: { top: 92, bottom: 92, left: 80, right: 80 }, borders: tableBorders(BORDER_GRAY), children: [new Paragraph({ alignment: AlignmentType.LEFT, spacing: { line: 310 }, children: [new TextRun({ text: alt.text, color: NAVY_TEXT, size: 21 })] })] }),
     ] })],
   });
 }
@@ -369,20 +377,14 @@ function drawPdfQuestionContent(doc: jsPDF, q: QuestionRow, num: number) {
 
   const blockX = safe.left;
   const blockW = safeW;
-  const innerTextW = blockW - 64;
+  const layout = resolveQuestionPdfLayout(doc, q, blockW, safeH);
+  const innerTextW = blockW - 40;
 
-  const labelBlockH = 42;
-  const introH = q.intro ? measureTextHeight(doc, q.intro, innerTextW, 11) + 10 : 0;
-  const commandH = measureTextHeight(doc, q.command, innerTextW, 12) + 8;
-  const promptBlockH = introH + commandH + 40;
-  const altHeights = letterAlternatives(q).map((alt) => Math.max(58, 18 + measureTextHeight(doc, alt.text, blockW - 134, 9.7, 4)));
-  const alternativesBlockH = 52 + altHeights.reduce((sum, h) => sum + h, 0) + (altHeights.length - 1) * 10 + 26;
-  const totalH = labelBlockH + 12 + promptBlockH + 16 + alternativesBlockH;
-  const startY = safe.top + Math.max((safeH - totalH) / 2, 0);
+  const startY = safe.top + Math.max((safeH - layout.totalH) / 2, 0);
 
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(...borderBlue);
-  doc.roundedRect(blockX, startY, blockW, labelBlockH, 10, 10, "FD");
+  doc.roundedRect(blockX, startY, blockW, layout.labelBlockH, 10, 10, "FD");
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(14);
@@ -397,39 +399,68 @@ function drawPdfQuestionContent(doc: jsPDF, q: QuestionRow, num: number) {
   doc.setTextColor(...navyText);
   doc.text(labelText, labelX + iconW + gap, labelY);
 
-  const promptY = startY + labelBlockH + 12;
+  const promptY = startY + layout.labelBlockH + 12;
   doc.setFillColor(255, 255, 255);
   doc.setDrawColor(...borderBlue);
-  doc.roundedRect(blockX, promptY, blockW, promptBlockH, 10, 10, "FD");
+  doc.roundedRect(blockX, promptY, blockW, layout.promptBlockH, 10, 10, "FD");
 
-  let cy = promptY + 24;
-  if (q.intro) cy = drawWrappedText(doc, q.intro, pageW / 2, cy, innerTextW, 11, navyText, "normal", "center") + 10;
-  drawWrappedText(doc, q.command, pageW / 2, cy, innerTextW, 12, navyText, "bold", "center");
+  let cy = promptY + 22;
+  if (q.intro) cy = drawJustifiedText(doc, q.intro, blockX + 20, cy, innerTextW, layout.introSize, navyText, "normal", layout.lineGap) + 10;
+  drawJustifiedText(doc, q.command, blockX + 20, cy, innerTextW, layout.commandSize, navyText, "bold", layout.lineGap);
 
-  const block2Y = promptY + promptBlockH + 16;
+  const block2Y = promptY + layout.promptBlockH + 16;
   doc.setFillColor(248, 251, 255);
   doc.setDrawColor(...borderBlue);
-  doc.roundedRect(blockX, block2Y, blockW, alternativesBlockH, 10, 10, "FD");
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(16);
-  doc.setTextColor(...navyText);
-  doc.text("ALTERNATIVAS", pageW / 2, block2Y + 30, { align: "center" });
+  doc.roundedRect(blockX, block2Y, blockW, layout.alternativesBlockH, 10, 10, "FD");
 
-  cy = block2Y + 46;
+  cy = block2Y + 18;
   letterAlternatives(q).forEach((alt, index) => {
-    const cardH = altHeights[index];
+    const cardH = layout.altHeights[index];
     doc.setFillColor(255, 255, 255);
     doc.setDrawColor(...borderGray);
-    doc.roundedRect(blockX + 18, cy, blockW - 36, cardH, 8, 8, "FD");
+    doc.roundedRect(blockX + 14, cy, blockW - 28, cardH, 8, 8, "FD");
     doc.setFillColor(...navy);
-    doc.circle(blockX + 44, cy + 20, 15, "F");
+    doc.circle(blockX + 40, cy + 22, 15, "F");
     doc.setFont("helvetica", "bold");
     doc.setFontSize(17);
     doc.setTextColor(...gold);
-    doc.text(alt.letter, blockX + 44, cy + 26, { align: "center" });
-    drawWrappedText(doc, alt.text, blockX + 70, cy + 15, blockW - 110, 9.7, navyText, "normal", "left", 4);
+    doc.text(alt.letter, blockX + 40, cy + 28, { align: "center" });
+    drawWrappedText(doc, alt.text, blockX + 66, cy + 17, blockW - 88, layout.altSize, navyText, "normal", "left", undefined, layout.lineGap);
     cy += cardH + 10;
   });
+}
+
+function resolveQuestionPdfLayout(doc: jsPDF, q: QuestionRow, blockW: number, safeH: number) {
+  const labelBlockH = 42;
+  const innerTextW = blockW - 40;
+  const altTextW = blockW - 88;
+  const candidates = [
+    { introSize: 12.4, commandSize: 13.2, altSize: 11.2, lineGap: 4.8 },
+    { introSize: 12.0, commandSize: 12.8, altSize: 10.9, lineGap: 4.5 },
+    { introSize: 11.6, commandSize: 12.4, altSize: 10.6, lineGap: 4.2 },
+    { introSize: 11.2, commandSize: 12.0, altSize: 10.3, lineGap: 4.0 },
+    { introSize: 10.8, commandSize: 11.6, altSize: 10.0, lineGap: 3.8 },
+    { introSize: 10.4, commandSize: 11.2, altSize: 9.7, lineGap: 3.5 },
+  ];
+
+  for (const candidate of candidates) {
+    const introH = q.intro ? measureTextHeight(doc, q.intro, innerTextW, candidate.introSize, undefined, candidate.lineGap) + 10 : 0;
+    const commandH = measureTextHeight(doc, q.command, innerTextW, candidate.commandSize, undefined, candidate.lineGap) + 8;
+    const promptBlockH = introH + commandH + 42;
+    const altHeights = letterAlternatives(q).map((alt) => Math.max(54, 18 + measureTextHeight(doc, alt.text, altTextW, candidate.altSize, undefined, candidate.lineGap)));
+    const alternativesBlockH = 36 + altHeights.reduce((sum, h) => sum + h, 0) + (altHeights.length - 1) * 10;
+    const totalH = labelBlockH + 12 + promptBlockH + 16 + alternativesBlockH;
+    if (totalH <= safeH) return { ...candidate, labelBlockH, promptBlockH, altHeights, alternativesBlockH, totalH };
+  }
+
+  const fallback = candidates[candidates.length - 1];
+  const introH = q.intro ? measureTextHeight(doc, q.intro, innerTextW, fallback.introSize, undefined, fallback.lineGap) + 10 : 0;
+  const commandH = measureTextHeight(doc, q.command, innerTextW, fallback.commandSize, undefined, fallback.lineGap) + 8;
+  const promptBlockH = introH + commandH + 42;
+  const altHeights = letterAlternatives(q).map((alt) => Math.max(54, 18 + measureTextHeight(doc, alt.text, altTextW, fallback.altSize, undefined, fallback.lineGap)));
+  const alternativesBlockH = 36 + altHeights.reduce((sum, h) => sum + h, 0) + (altHeights.length - 1) * 10;
+  const totalH = labelBlockH + 12 + promptBlockH + 16 + alternativesBlockH;
+  return { ...fallback, labelBlockH, promptBlockH, altHeights, alternativesBlockH, totalH };
 }
 
 function drawNotebookIcon(doc: jsPDF, x: number, y: number, color: [number, number, number]) {
@@ -521,24 +552,48 @@ function drawPdfAnswerContent(doc: jsPDF, q: QuestionRow, num: number) {
   });
 }
 
-function measureTextHeight(doc: jsPDF, text: string, maxWidth: number, size: number, maxLines?: number) {
+function measureTextHeight(doc: jsPDF, text: string, maxWidth: number, size: number, maxLines?: number, lineGap = 3) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(size);
   const lines = doc.splitTextToSize(text, maxWidth) as string[];
   const visible = typeof maxLines === "number" ? lines.slice(0, maxLines) : lines;
-  return visible.length * (size + 3);
+  return visible.length * (size + lineGap);
 }
 
-function drawWrappedText(doc: jsPDF, text: string, x: number, y: number, maxWidth: number, size: number, color: [number, number, number], weight: "normal" | "bold" = "normal", align: "left" | "center" = "left", maxLines?: number) {
+function drawWrappedText(doc: jsPDF, text: string, x: number, y: number, maxWidth: number, size: number, color: [number, number, number], weight: "normal" | "bold" = "normal", align: "left" | "center" = "left", maxLines?: number, lineGap = 3) {
   doc.setFont("helvetica", weight);
   doc.setFontSize(size);
   doc.setTextColor(...color);
   const lines = doc.splitTextToSize(text, maxWidth) as string[];
   const visible = typeof maxLines === "number" ? lines.slice(0, maxLines) : lines;
   visible.forEach((line, index) => {
-    doc.text(line, x, y + index * (size + 3), { align });
+    doc.text(line, x, y + index * (size + lineGap), { align });
   });
-  return y + visible.length * (size + 3);
+  return y + visible.length * (size + lineGap);
+}
+
+function drawJustifiedText(doc: jsPDF, text: string, x: number, y: number, maxWidth: number, size: number, color: [number, number, number], weight: "normal" | "bold" = "normal", lineGap = 3) {
+  doc.setFont("helvetica", weight);
+  doc.setFontSize(size);
+  doc.setTextColor(...color);
+  const lines = doc.splitTextToSize(text, maxWidth) as string[];
+  lines.forEach((line, index) => {
+    const lineY = y + index * (size + lineGap);
+    const isLast = index === lines.length - 1;
+    const words = line.trim().split(/\s+/);
+    if (isLast || words.length < 2) {
+      doc.text(line, x, lineY);
+      return;
+    }
+    const wordsWidth = words.reduce((sum, word) => sum + doc.getTextWidth(word), 0);
+    const gap = (maxWidth - wordsWidth) / (words.length - 1);
+    let cursorX = x;
+    words.forEach((word) => {
+      doc.text(word, cursorX, lineY);
+      cursorX += doc.getTextWidth(word) + gap;
+    });
+  });
+  return y + lines.length * (size + lineGap);
 }
 
 function drawWrappedTextWithColoredPrefix(doc: jsPDF, text: string, prefix: string, x: number, y: number, maxWidth: number, size: number, prefixColor: [number, number, number], bodyColor: [number, number, number], maxLines: number) {
