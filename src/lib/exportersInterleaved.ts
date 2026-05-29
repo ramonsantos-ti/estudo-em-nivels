@@ -127,10 +127,10 @@ export async function exportDocxInterleaved(opts: ExportOptions) {
     opts.coverDataUrl ? loadImageSource(opts.coverDataUrl) : Promise.resolve(null),
   ]);
   const levelPages = await loadLevelPages(opts, groups.map((g) => g.level));
+  const sections: any[] = [];
+  if (cover) sections.push(fullImageSection(cover));
 
-  for (const group of groups) {
-    const sections: any[] = [];
-    if (cover) sections.push(fullImageSection(cover));
+  groups.forEach((group) => {
     const levelPage = levelPages.get(group.level);
     if (levelPage) sections.push(fullImageSection(levelPage));
 
@@ -139,11 +139,11 @@ export async function exportDocxInterleaved(opts: ExportOptions) {
       sections.push({ properties: { page: { margin: DOCX_QUESTION_MARGIN } }, headers: { default: bgHeader(bgQuestao) }, children: buildDocxQuestionPage(q, num) });
       if (opts.includeAnswers) sections.push({ properties: { page: { margin: DOCX_ANSWER_MARGIN } }, headers: { default: bgHeader(bgGabarito) }, children: buildDocxAnswerPage(q, num) });
     });
+  });
 
-    const doc = new Document({ creator: "Questão de Sucesso", title: `${opts.title} - Nível ${group.level}`, styles: { default: { document: { run: { font: "Arial", size: 22 } } } }, sections });
-    const blob = await Packer.toBlob(doc);
-    saveAs(blob, `${slug(opts.title)}-nivel-${group.level}.docx`);
-  }
+  const doc = new Document({ creator: "Questão de Sucesso", title: opts.title, styles: { default: { document: { run: { font: "Arial", size: 22 } } } }, sections });
+  const blob = await Packer.toBlob(doc);
+  saveAs(blob, `${slug(opts.title)}.docx`);
 }
 
 function buildDocxQuestionPage(q: QuestionRow, num: number): any[] {
@@ -179,24 +179,22 @@ export async function exportPdfInterleaved(opts: ExportOptions) {
     opts.coverDataUrl ? loadImageSource(opts.coverDataUrl) : Promise.resolve(null),
   ]);
   const levelPages = await loadLevelPages(opts, groups.map((g) => g.level));
+  const doc = new jsPDF({ unit: "pt", format: "a4" });
+  let hasContentPage = false;
+  const usePage = () => { if (hasContentPage) doc.addPage(); hasContentPage = true; };
+  const drawFullImage = (img: LoadedImage) => doc.addImage(img.dataUrl, img.pdfType, 0, 0, pageW, pageH, undefined, "FAST");
 
-  for (const group of groups) {
-    const doc = new jsPDF({ unit: "pt", format: "a4" });
-    let hasContentPage = false;
-    const usePage = () => { if (hasContentPage) doc.addPage(); hasContentPage = true; };
-    const drawFullImage = (img: LoadedImage) => doc.addImage(img.dataUrl, img.pdfType, 0, 0, pageW, pageH, undefined, "FAST");
-
-    if (cover) { usePage(); drawFullImage(cover); }
+  if (cover) { usePage(); drawFullImage(cover); }
+  groups.forEach((group) => {
     const levelPage = levelPages.get(group.level);
     if (levelPage) { usePage(); drawFullImage(levelPage); }
-
     group.questions.forEach((q, idx) => {
       const num = questionNumber(q, idx);
       usePage(); drawFullImage(bgQuestao); drawPdfQuestionContent(doc, q, num);
       if (opts.includeAnswers) { usePage(); drawFullImage(bgGabarito); drawPdfAnswerContent(doc, q, num); }
     });
-    doc.save(`${slug(opts.title)}-nivel-${group.level}.pdf`);
-  }
+  });
+  doc.save(`${slug(opts.title)}.pdf`);
 }
 
 function drawPdfQuestionContent(doc: jsPDF, q: QuestionRow, num: number) {
