@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
-import { Download, ImagePlus, Trash2, UploadCloud } from "lucide-react";
+import { Download, ImagePlus, Save, Trash2, UploadCloud, X } from "lucide-react";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
 
@@ -22,82 +22,94 @@ type CoverModel = {
   name: string;
   image_data_url: string | null;
   created_at?: string;
-  isBuiltin?: boolean;
 };
 
 type TextLayerKey = "title" | "subtitle" | "tagline";
 
-type TextLayerPosition = {
+type TextLayerBox = {
   x: number;
   y: number;
   width: number;
+  height: number;
 };
 
-type TextLayerPositions = Record<TextLayerKey, TextLayerPosition>;
+type TextLayerBoxes = Record<TextLayerKey, TextLayerBox>;
 
-const DEFAULT_MODEL_IMAGE = makeDefaultCoverSvg();
-
-const BUILTIN_MODEL: CoverModel = {
-  id: "builtin-default-cover-model",
-  name: "Modelo padrão — Questão de Sucesso",
-  image_data_url: DEFAULT_MODEL_IMAGE,
-  isBuiltin: true,
+type Interaction = {
+  layer: TextLayerKey;
+  mode: "move" | "resize";
 };
 
-const DEFAULT_POSITIONS: TextLayerPositions = {
-  title: { x: 9, y: 18, width: 82 },
-  subtitle: { x: 22, y: 34, width: 56 },
-  tagline: { x: 15, y: 40, width: 70 },
+const DEFAULT_BOXES: TextLayerBoxes = {
+  title: { x: 8, y: 17, width: 84, height: 18 },
+  subtitle: { x: 22, y: 35, width: 56, height: 6 },
+  tagline: { x: 16, y: 42, width: 68, height: 5 },
 };
 
 function CoversPage() {
   const qc = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const previewRef = useRef<HTMLDivElement | null>(null);
-  const [selectedModelId, setSelectedModelId] = useState(BUILTIN_MODEL.id);
+  const [selectedModelId, setSelectedModelId] = useState<string | null>(null);
+  const [pendingImage, setPendingImage] = useState<string | null>(null);
+  const [pendingFileName, setPendingFileName] = useState("");
+  const [modelName, setModelName] = useState("");
   const [titleLine1, setTitleLine1] = useState("ESTATUTO DO");
   const [titleLine2, setTitleLine2] = useState("SERVIDOR PÚBLICO");
   const [titleLine3, setTitleLine3] = useState("FEDERAL");
   const [subtitle, setSubtitle] = useState("Lei nº 8.112/90");
   const [tagline, setTagline] = useState("Estude por questões. Aprenda na prática. Seja aprovado.");
-  const [positions, setPositions] = useState<TextLayerPositions>(DEFAULT_POSITIONS);
-  const [dragging, setDragging] = useState<TextLayerKey | null>(null);
+  const [boxes, setBoxes] = useState<TextLayerBoxes>(DEFAULT_BOXES);
+  const [interaction, setInteraction] = useState<Interaction | null>(null);
 
   const modelsQuery = useQuery({
     queryKey: ["cover-models"],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("covers")
-        .select("id, name, image_data_url, created_at, is_active")
+        .select("id, name, image_data_url, created_at")
+        .not("image_data_url", "is", null)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as CoverModel[];
     },
   });
 
-  const models = useMemo(() => [BUILTIN_MODEL, ...(modelsQuery.data ?? [])], [modelsQuery.data]);
-  const selectedModel = models.find((model) => model.id === selectedModelId) ?? BUILTIN_MODEL;
-  const selectedImage = selectedModel.image_data_url || DEFAULT_MODEL_IMAGE;
+  const models = modelsQuery.data ?? [];
+  const selectedModel = useMemo(
+    () => models.find((model) => model.id === selectedModelId) ?? models[0] ?? null,
+    [models, selectedModelId],
+  );
+  const selectedImage = pendingImage || selectedModel?.image_data_url || null;
 
-  const uploadModel = useMutation({
-    mutationFn: async (file: File) => {
-      const imageDataUrl = await fileToCompressedDataUrl(file);
-      const name = file.name.replace(/\.[^.]+$/, "") || "Modelo de capa";
-      const { error } = await supabase.from("covers").insert({
-        name,
-        image_data_url: imageDataUrl,
-        title_line_1: "",
-        title_line_2: "",
-        title_line_3: "",
-        subtitle: "",
-        badge_text: "",
-        quote_text: "",
-        is_active: true,
-      });
+  const saveModel = useMutation({
+    mutationFn: async () => {
+      if (!pendingImage) throw new Error("Selecione uma imagem antes de salvar o modelo.");
+      const name = modelName.trim() || pendingFileName || "Modelo de capa";
+      const { data, error } = await supabase
+        .from("covers")
+        .insert({
+          name,
+          image_data_url: pendingImage,
+          title_line_1: "",
+          title_line_2: "",
+          title_line_3: "",
+          subtitle: "",
+          badge_text: "",
+          quote_text: "",
+          is_active: true,
+        })
+        .select("id")
+        .single();
       if (error) throw error;
+      return data;
     },
-    onSuccess: () => {
-      toast.success("Modelo de capa cadastrado");
+    onSuccess: (data) => {
+      toast.success("Modelo salvo");
+      setPendingImage(null);
+      setPendingFileName("");
+      setModelName("");
+      setSelectedModelId(data.id);
       qc.invalidateQueries({ queryKey: ["cover-models"] });
     },
     onError: (e: any) => toast.error(e.message),
@@ -110,45 +122,82 @@ function CoversPage() {
     },
     onSuccess: () => {
       toast.success("Modelo excluído");
-      setSelectedModelId(BUILTIN_MODEL.id);
+      setSelectedModelId(null);
       qc.invalidateQueries({ queryKey: ["cover-models"] });
     },
     onError: (e: any) => toast.error(e.message),
   });
 
-  function handleUpload(file: File | undefined) {
+  async function handleUpload(file: File | undefined) {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
       toast.error("Envie um arquivo de imagem.");
       return;
     }
-    uploadModel.mutate(file);
+    try {
+      const imageDataUrl = await fileToCompressedDataUrl(file);
+      const name = file.name.replace(/\.[^.]+$/, "") || "Modelo de capa";
+      setPendingImage(imageDataUrl);
+      setPendingFileName(name);
+      setModelName(name);
+      setSelectedModelId(null);
+      toast.success("Imagem carregada. Clique em Salvar modelo para gravar.");
+    } catch (e: any) {
+      toast.error(e.message || "Não foi possível carregar a imagem.");
+    }
   }
 
-  function beginDrag(layer: TextLayerKey) {
-    setDragging(layer);
+  function selectSavedModel(model: CoverModel) {
+    setPendingImage(null);
+    setPendingFileName("");
+    setModelName("");
+    setSelectedModelId(model.id);
+  }
+
+  function beginInteraction(layer: TextLayerKey, mode: "move" | "resize") {
+    setInteraction({ layer, mode });
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLDivElement>) {
-    if (!dragging || !previewRef.current) return;
+    if (!interaction || !previewRef.current) return;
     const rect = previewRef.current.getBoundingClientRect();
-    const x = ((event.clientX - rect.left) / rect.width) * 100;
-    const y = ((event.clientY - rect.top) / rect.height) * 100;
-    setPositions((current) => ({
-      ...current,
-      [dragging]: {
-        ...current[dragging],
-        x: clamp(x - current[dragging].width / 2, 0, 100 - current[dragging].width),
-        y: clamp(y, 0, 95),
-      },
-    }));
+    const pointerX = ((event.clientX - rect.left) / rect.width) * 100;
+    const pointerY = ((event.clientY - rect.top) / rect.height) * 100;
+
+    setBoxes((current) => {
+      const box = current[interaction.layer];
+      if (interaction.mode === "resize") {
+        return {
+          ...current,
+          [interaction.layer]: {
+            ...box,
+            width: clamp(pointerX - box.x, 12, 100 - box.x),
+            height: clamp(pointerY - box.y, 3, 100 - box.y),
+          },
+        };
+      }
+
+      return {
+        ...current,
+        [interaction.layer]: {
+          ...box,
+          x: clamp(pointerX - box.width / 2, 0, 100 - box.width),
+          y: clamp(pointerY - box.height / 2, 0, 100 - box.height),
+        },
+      };
+    });
   }
 
-  function finishDrag() {
-    setDragging(null);
+  function finishInteraction() {
+    setInteraction(null);
   }
 
   async function exportPdf() {
+    if (!selectedImage) {
+      toast.error("Selecione ou salve um modelo antes de exportar.");
+      return;
+    }
+
     try {
       const canvas = await renderCoverToCanvas({
         imageDataUrl: selectedImage,
@@ -157,7 +206,7 @@ function CoversPage() {
         titleLine3,
         subtitle,
         tagline,
-        positions,
+        boxes,
       });
       const img = canvas.toDataURL("image/jpeg", 0.92);
       const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
@@ -173,55 +222,79 @@ function CoversPage() {
 
   return (
     <AppShell>
-      <div className="space-y-8">
+      <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-primary">Capas personalizadas</h1>
           <p className="text-muted-foreground">
-            Cadastre modelos de capa, selecione uma imagem, posicione os textos sobre a área em branco e exporte a capa em PDF.
+            Envie imagens de fundo como modelos de capa. Depois selecione um modelo, preencha os textos, mova/redimensione as caixas e exporte em PDF.
           </p>
         </div>
 
         <Card>
-          <CardHeader>
+          <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2">
-              <ImagePlus className="h-5 w-5" /> Modelos de capa
+              <ImagePlus className="h-5 w-5" /> Upload e modelos salvos
             </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={(event) => handleUpload(event.target.files?.[0])}
-              />
-              <Button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploadModel.isPending}>
-                <UploadCloud className="h-4 w-4 mr-2" /> {uploadModel.isPending ? "Enviando..." : "Adicionar modelo"}
+          <CardContent className="space-y-3">
+            <div className="grid gap-3 md:grid-cols-[auto_1fr_auto] md:items-end">
+              <div>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(event) => handleUpload(event.target.files?.[0])}
+                />
+                <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()}>
+                  <UploadCloud className="h-4 w-4 mr-2" /> Escolher imagem
+                </Button>
+              </div>
+              <div>
+                <Label>Nome do modelo</Label>
+                <Input
+                  value={modelName}
+                  onChange={(e) => setModelName(e.target.value)}
+                  placeholder="Informe um nome antes de salvar"
+                  disabled={!pendingImage}
+                />
+              </div>
+              <Button type="button" onClick={() => saveModel.mutate()} disabled={!pendingImage || saveModel.isPending}>
+                <Save className="h-4 w-4 mr-2" /> {saveModel.isPending ? "Salvando..." : "Salvar modelo"}
               </Button>
-              <p className="text-sm text-muted-foreground">
-                A imagem enviada será salva como modelo. Os textos e posições do editor não ficam salvos.
-              </p>
             </div>
 
-            <div className="flex gap-3 overflow-x-auto pb-2">
-              {models.map((model) => {
-                const active = model.id === selectedModelId;
-                return (
-                  <button
-                    key={model.id}
-                    type="button"
-                    onClick={() => setSelectedModelId(model.id)}
-                    className={`relative min-w-[130px] rounded-lg border p-2 text-left transition ${active ? "border-secondary ring-2 ring-secondary" : "border-border hover:border-primary"}`}
-                  >
-                    <div className="aspect-[1055/1491] overflow-hidden rounded-md bg-muted">
-                      <img src={model.image_data_url || DEFAULT_MODEL_IMAGE} alt={model.name} className="h-full w-full object-cover" />
-                    </div>
-                    <div className="mt-2 line-clamp-2 text-xs font-medium text-primary">{model.name}</div>
-                    {model.isBuiltin && <Badge className="mt-1 bg-secondary text-secondary-foreground">Padrão</Badge>}
-                  </button>
-                );
-              })}
+            {pendingImage && (
+              <div className="flex items-center justify-between rounded-md border bg-muted/40 p-2 text-sm">
+                <span>Imagem carregada aguardando salvamento: <strong>{modelName || pendingFileName}</strong></span>
+                <Button size="sm" variant="ghost" onClick={() => { setPendingImage(null); setPendingFileName(""); setModelName(""); }}>
+                  <X className="h-4 w-4 mr-1" />Cancelar
+                </Button>
+              </div>
+            )}
+
+            <div className="max-h-[28vh] overflow-x-auto rounded-md border bg-muted/20 p-2">
+              <div className="flex gap-2">
+                {models.map((model) => {
+                  const active = !pendingImage && model.id === selectedModel?.id;
+                  return (
+                    <button
+                      key={model.id}
+                      type="button"
+                      onClick={() => selectSavedModel(model)}
+                      className={`w-24 shrink-0 rounded-md border p-1 text-left transition ${active ? "border-secondary ring-2 ring-secondary" : "border-border hover:border-primary"}`}
+                    >
+                      <div className="aspect-[1055/1491] overflow-hidden rounded bg-muted">
+                        <img src={model.image_data_url || ""} alt={model.name} className="h-full w-full object-cover" />
+                      </div>
+                      <div className="mt-1 line-clamp-2 text-[11px] font-medium text-primary">{model.name}</div>
+                    </button>
+                  );
+                })}
+                {models.length === 0 && !pendingImage && (
+                  <div className="py-6 text-sm text-muted-foreground">Nenhum modelo salvo. Escolha uma imagem e clique em Salvar modelo.</div>
+                )}
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -254,14 +327,14 @@ function CoversPage() {
               </div>
 
               <div className="rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
-                Para mover os textos, arraste diretamente cada bloco sobre a imagem da direita.
+                Arraste a caixa para mover. Arraste o quadrado no canto inferior direito da caixa para redimensionar.
               </div>
 
               <div className="flex gap-2">
-                <Button type="button" onClick={exportPdf} className="bg-primary hover:bg-primary/90 flex-1">
+                <Button type="button" onClick={exportPdf} disabled={!selectedImage} className="bg-primary hover:bg-primary/90 flex-1">
                   <Download className="h-4 w-4 mr-2" /> Exportar PDF
                 </Button>
-                {!selectedModel.isBuiltin && (
+                {!pendingImage && selectedModel && (
                   <Button
                     type="button"
                     variant="outline"
@@ -278,47 +351,50 @@ function CoversPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Modelo selecionado</CardTitle>
+              <CardTitle>
+                {pendingImage ? "Prévia da imagem ainda não salva" : selectedModel ? "Modelo selecionado" : "Nenhum modelo selecionado"}
+              </CardTitle>
             </CardHeader>
             <CardContent>
-              <div
-                ref={previewRef}
-                className="relative mx-auto aspect-[1055/1491] max-h-[82vh] overflow-hidden rounded-xl border bg-muted shadow-xl select-none"
-                onPointerMove={handlePointerMove}
-                onPointerUp={finishDrag}
-                onPointerCancel={finishDrag}
-                onPointerLeave={finishDrag}
-              >
-                <img src={selectedImage} alt={selectedModel.name} className="absolute inset-0 h-full w-full object-cover" draggable={false} />
-                <DraggableText
-                  layer="title"
-                  position={positions.title}
-                  onPointerDown={beginDrag}
-                  className="text-center font-black uppercase leading-[0.95] text-white drop-shadow-[0_3px_4px_rgba(0,0,0,0.75)]"
+              {selectedImage ? (
+                <div
+                  ref={previewRef}
+                  className="relative mx-auto aspect-[1055/1491] max-h-[82vh] overflow-hidden rounded-xl border bg-muted shadow-xl select-none"
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={finishInteraction}
+                  onPointerCancel={finishInteraction}
+                  onPointerLeave={finishInteraction}
                 >
-                  <div className="text-[clamp(22px,5.3vw,78px)]">{titleLine1}</div>
-                  <div className="text-[clamp(22px,5.3vw,78px)] text-[#ffc400]">{titleLine2}</div>
-                  <div className="text-[clamp(22px,5.3vw,78px)]">{titleLine3}</div>
-                </DraggableText>
-                <DraggableText
-                  layer="subtitle"
-                  position={positions.subtitle}
-                  onPointerDown={beginDrag}
-                  className="text-center"
-                >
-                  <span className="inline-block rounded-xl border-2 border-[#ffc400] bg-[#071a3a]/70 px-5 py-2 text-[clamp(14px,2.4vw,34px)] font-black text-[#ffc400] shadow">
-                    {subtitle}
-                  </span>
-                </DraggableText>
-                <DraggableText
-                  layer="tagline"
-                  position={positions.tagline}
-                  onPointerDown={beginDrag}
-                  className="text-center text-[clamp(12px,1.8vw,24px)] font-bold text-white drop-shadow"
-                >
-                  {tagline}
-                </DraggableText>
-              </div>
+                  <img src={selectedImage} alt="Modelo de capa" className="absolute inset-0 h-full w-full object-cover" draggable={false} />
+                  <EditableBox
+                    layer="title"
+                    box={boxes.title}
+                    onStart={beginInteraction}
+                    className="text-center font-black uppercase leading-[0.95] text-white drop-shadow-[0_3px_4px_rgba(0,0,0,0.75)]"
+                  >
+                    <div className="text-[clamp(22px,5.3vw,78px)]">{titleLine1}</div>
+                    <div className="text-[clamp(22px,5.3vw,78px)] text-[#ffc400]">{titleLine2}</div>
+                    <div className="text-[clamp(22px,5.3vw,78px)]">{titleLine3}</div>
+                  </EditableBox>
+                  <EditableBox layer="subtitle" box={boxes.subtitle} onStart={beginInteraction} className="text-center">
+                    <span className="inline-block rounded-xl border-2 border-[#ffc400] bg-[#071a3a]/70 px-5 py-2 text-[clamp(14px,2.4vw,34px)] font-black text-[#ffc400] shadow">
+                      {subtitle}
+                    </span>
+                  </EditableBox>
+                  <EditableBox
+                    layer="tagline"
+                    box={boxes.tagline}
+                    onStart={beginInteraction}
+                    className="text-center text-[clamp(12px,1.8vw,24px)] font-bold text-white drop-shadow"
+                  >
+                    {tagline}
+                  </EditableBox>
+                </div>
+              ) : (
+                <div className="flex aspect-[1055/1491] max-h-[82vh] items-center justify-center rounded-xl border bg-muted text-center text-muted-foreground">
+                  Faça upload e salve um modelo para começar.
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
@@ -327,16 +403,16 @@ function CoversPage() {
   );
 }
 
-function DraggableText({
+function EditableBox({
   layer,
-  position,
-  onPointerDown,
+  box,
+  onStart,
   className,
   children,
 }: {
   layer: TextLayerKey;
-  position: TextLayerPosition;
-  onPointerDown: (layer: TextLayerKey) => void;
+  box: TextLayerBox;
+  onStart: (layer: TextLayerKey, mode: "move" | "resize") => void;
   className?: string;
   children: React.ReactNode;
 }) {
@@ -344,14 +420,24 @@ function DraggableText({
     <div
       role="button"
       tabIndex={0}
-      className={`absolute cursor-move rounded-md border border-dashed border-white/45 p-1 ${className ?? ""}`}
-      style={{ left: `${position.x}%`, top: `${position.y}%`, width: `${position.width}%` }}
+      className={`absolute cursor-move rounded-md border border-dashed border-white/60 p-1 ${className ?? ""}`}
+      style={{ left: `${box.x}%`, top: `${box.y}%`, width: `${box.width}%`, height: `${box.height}%` }}
       onPointerDown={(event) => {
         event.currentTarget.setPointerCapture(event.pointerId);
-        onPointerDown(layer);
+        onStart(layer, "move");
       }}
     >
-      {children}
+      <div className="flex h-full w-full items-center justify-center overflow-hidden">{children}</div>
+      <button
+        type="button"
+        aria-label="Redimensionar caixa"
+        className="absolute bottom-0 right-0 h-4 w-4 translate-x-1/2 translate-y-1/2 cursor-nwse-resize rounded-sm border border-white bg-secondary"
+        onPointerDown={(event) => {
+          event.stopPropagation();
+          event.currentTarget.setPointerCapture(event.pointerId);
+          onStart(layer, "resize");
+        }}
+      />
     </div>
   );
 }
@@ -359,7 +445,7 @@ function DraggableText({
 async function fileToCompressedDataUrl(file: File) {
   const source = await fileToDataUrl(file);
   const img = await loadImage(source);
-  const maxW = 1200;
+  const maxW = 1400;
   const scale = Math.min(1, maxW / img.width);
   const canvas = document.createElement("canvas");
   canvas.width = Math.round(img.width * scale);
@@ -367,7 +453,7 @@ async function fileToCompressedDataUrl(file: File) {
   const ctx = canvas.getContext("2d");
   if (!ctx) throw new Error("Não foi possível processar a imagem.");
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.88);
+  return canvas.toDataURL("image/jpeg", 0.9);
 }
 
 function fileToDataUrl(file: File) {
@@ -395,7 +481,7 @@ async function renderCoverToCanvas(args: {
   titleLine3: string;
   subtitle: string;
   tagline: string;
-  positions: TextLayerPositions;
+  boxes: TextLayerBoxes;
 }) {
   const img = await loadImage(args.imageDataUrl);
   const canvas = document.createElement("canvas");
@@ -405,26 +491,27 @@ async function renderCoverToCanvas(args: {
   if (!ctx) throw new Error("Não foi possível gerar o PDF.");
 
   ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-  drawTitleBlock(ctx, args.positions.title, args.titleLine1, args.titleLine2, args.titleLine3);
-  drawSubtitle(ctx, args.positions.subtitle, args.subtitle);
-  drawTagline(ctx, args.positions.tagline, args.tagline);
+  drawTitleBlock(ctx, args.boxes.title, args.titleLine1, args.titleLine2, args.titleLine3);
+  drawSubtitle(ctx, args.boxes.subtitle, args.subtitle);
+  drawTagline(ctx, args.boxes.tagline, args.tagline);
 
   return canvas;
 }
 
-function drawTitleBlock(ctx: CanvasRenderingContext2D, pos: TextLayerPosition, line1: string, line2: string, line3: string) {
-  const x = pct(pos.x, 1055) + pct(pos.width, 1055) / 2;
-  const y = pct(pos.y, 1491);
-  const maxWidth = pct(pos.width, 1055);
+function drawTitleBlock(ctx: CanvasRenderingContext2D, box: TextLayerBox, line1: string, line2: string, line3: string) {
+  const x = pct(box.x, 1055) + pct(box.width, 1055) / 2;
+  const y = pct(box.y, 1491);
+  const maxWidth = pct(box.width, 1055);
+  const lineHeight = pct(box.height, 1491) / 3;
+  const fontSize = Math.max(24, Math.min(92, lineHeight * 0.88));
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
-  ctx.font = "900 84px Arial";
-  ctx.lineWidth = 8;
+  ctx.font = `900 ${fontSize}px Arial`;
+  ctx.lineWidth = Math.max(4, fontSize * 0.08);
   [
     [line1, "#ffffff", y],
-    [line2, "#ffc400", y + 84],
-    [line3, "#ffffff", y + 168],
+    [line2, "#ffc400", y + lineHeight],
+    [line3, "#ffffff", y + lineHeight * 2],
   ].forEach(([text, color, top]) => {
     ctx.strokeStyle = "rgba(0,0,0,0.62)";
     ctx.fillStyle = String(color);
@@ -433,29 +520,29 @@ function drawTitleBlock(ctx: CanvasRenderingContext2D, pos: TextLayerPosition, l
   });
 }
 
-function drawSubtitle(ctx: CanvasRenderingContext2D, pos: TextLayerPosition, text: string) {
-  const x = pct(pos.x, 1055) + pct(pos.width, 1055) / 2;
-  const y = pct(pos.y, 1491);
-  const maxWidth = pct(pos.width, 1055);
+function drawSubtitle(ctx: CanvasRenderingContext2D, box: TextLayerBox, text: string) {
+  const x = pct(box.x, 1055) + pct(box.width, 1055) / 2;
+  const y = pct(box.y, 1491) + pct(box.height, 1491) / 2;
+  const maxWidth = pct(box.width, 1055);
+  const h = pct(box.height, 1491);
+  const fontSize = Math.max(18, Math.min(54, h * 0.55));
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.font = "900 44px Arial";
-  const metrics = ctx.measureText(text);
-  const w = Math.min(metrics.width + 70, maxWidth);
-  const h = 76;
-  roundRect(ctx, x - w / 2, y - h / 2, w, h, 16, "rgba(4,27,63,.68)", "#ffc400", 4);
+  ctx.font = `900 ${fontSize}px Arial`;
+  roundRect(ctx, pct(box.x, 1055), pct(box.y, 1491), maxWidth, h, 16, "rgba(4,27,63,.68)", "#ffc400", 4);
   ctx.fillStyle = "#ffc400";
   ctx.fillText(text, x, y + 2, maxWidth - 30);
 }
 
-function drawTagline(ctx: CanvasRenderingContext2D, pos: TextLayerPosition, text: string) {
-  const x = pct(pos.x, 1055) + pct(pos.width, 1055) / 2;
-  const y = pct(pos.y, 1491);
-  const maxWidth = pct(pos.width, 1055);
+function drawTagline(ctx: CanvasRenderingContext2D, box: TextLayerBox, text: string) {
+  const x = pct(box.x, 1055) + pct(box.width, 1055) / 2;
+  const y = pct(box.y, 1491) + pct(box.height, 1491) / 2;
+  const maxWidth = pct(box.width, 1055);
+  const fontSize = Math.max(14, Math.min(36, pct(box.height, 1491) * 0.62));
   ctx.textAlign = "center";
-  ctx.textBaseline = "top";
-  ctx.font = "700 30px Arial";
-  ctx.lineWidth = 4;
+  ctx.textBaseline = "middle";
+  ctx.font = `700 ${fontSize}px Arial`;
+  ctx.lineWidth = Math.max(2, fontSize * 0.08);
   ctx.strokeStyle = "rgba(0,0,0,.55)";
   ctx.fillStyle = "#ffffff";
   ctx.strokeText(text, x, y, maxWidth);
@@ -501,87 +588,4 @@ function clamp(value: number, min: number, max: number) {
 
 function slug(s: string) {
   return s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "capa";
-}
-
-function makeDefaultCoverSvg() {
-  const svg = `
-  <svg xmlns="http://www.w3.org/2000/svg" width="1055" height="1491" viewBox="0 0 1055 1491">
-    <defs>
-      <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#031633"/>
-        <stop offset="0.55" stop-color="#052553"/>
-        <stop offset="1" stop-color="#020a1a"/>
-      </linearGradient>
-      <radialGradient id="sun" cx="67%" cy="56%" r="38%">
-        <stop offset="0" stop-color="#ffc658" stop-opacity=".95"/>
-        <stop offset=".34" stop-color="#25517f" stop-opacity=".55"/>
-        <stop offset="1" stop-color="#001533" stop-opacity="0"/>
-      </radialGradient>
-      <filter id="shadow"><feDropShadow dx="0" dy="4" stdDeviation="4" flood-opacity=".55"/></filter>
-    </defs>
-    <rect width="1055" height="1491" fill="url(#bg)"/>
-    <rect width="1055" height="1491" fill="url(#sun)"/>
-    <path d="M0 198 H500 L528 219 L556 198 H1055" fill="none" stroke="#ffc400" stroke-width="6"/>
-    <g text-anchor="middle" font-family="Arial, sans-serif" filter="url(#shadow)">
-      <text x="527" y="78" font-size="78" fill="#fff">☑</text>
-      <text x="527" y="144" font-size="52" font-weight="900" fill="#fff">QUESTÃO DE SUCESSO</text>
-      <text x="527" y="178" font-size="18" font-weight="900" fill="#ffc400">QUESTÕES COMENTADAS PARA CONCURSOS</text>
-    </g>
-    <g opacity=".88">
-      <rect x="70" y="708" width="80" height="80" rx="40" fill="none" stroke="#ffc400" stroke-width="4"/>
-      <text x="110" y="763" text-anchor="middle" font-size="52" fill="#ffc400">◎</text>
-      <text x="164" y="738" font-family="Arial" font-size="26" font-weight="800" fill="#fff">Do zero à</text>
-      <text x="164" y="770" font-family="Arial" font-size="26" font-weight="800" fill="#ffc400">nomeação</text>
-      <rect x="70" y="808" width="80" height="80" rx="40" fill="none" stroke="#ffc400" stroke-width="4"/>
-      <text x="110" y="860" text-anchor="middle" font-size="44" fill="#fff">▤</text>
-      <text x="164" y="836" font-family="Arial" font-size="26" font-weight="800" fill="#fff">Comentários</text>
-      <text x="164" y="868" font-family="Arial" font-size="26" font-weight="800" fill="#ffc400">didáticos</text>
-      <rect x="70" y="908" width="80" height="80" rx="40" fill="none" stroke="#ffc400" stroke-width="4"/>
-      <text x="110" y="958" text-anchor="middle" font-size="44" fill="#fff">↗</text>
-      <text x="164" y="936" font-family="Arial" font-size="26" font-weight="800" fill="#fff">4 níveis de</text>
-      <text x="164" y="968" font-family="Arial" font-size="26" font-weight="800" fill="#ffc400">questões</text>
-      <rect x="70" y="1008" width="80" height="80" rx="40" fill="none" stroke="#ffc400" stroke-width="4"/>
-      <text x="110" y="1060" text-anchor="middle" font-size="44" fill="#fff">♕</text>
-      <text x="164" y="1036" font-family="Arial" font-size="26" font-weight="800" fill="#fff">Foco no que</text>
-      <text x="164" y="1068" font-family="Arial" font-size="26" font-weight="800" fill="#ffc400">importa</text>
-    </g>
-    <g opacity=".95">
-      <circle cx="870" cy="845" r="105" fill="#ffc400" stroke="#d69a00" stroke-width="6"/>
-      <text x="870" y="805" text-anchor="middle" font-family="Arial" font-size="24" font-weight="900" fill="#031633">MENOS</text>
-      <text x="870" y="842" text-anchor="middle" font-family="Arial" font-size="40" font-weight="900" fill="#031633">TEORIA,</text>
-      <text x="870" y="884" text-anchor="middle" font-family="Arial" font-size="40" font-weight="900" fill="#031633">MAIS</text>
-      <text x="870" y="920" text-anchor="middle" font-family="Arial" font-size="28" font-weight="900" fill="#031633">RESULTADO!</text>
-    </g>
-    <g font-family="Arial" font-weight="900" fill="#fff" filter="url(#shadow)">
-      <text x="760" y="1018" font-size="28">“ Seu esforço hoje,</text>
-      <text x="760" y="1054" font-size="28" fill="#ffc400">sua conquista</text>
-      <text x="760" y="1090" font-size="28" fill="#ffc400">amanhã!</text>
-    </g>
-    <path d="M430 615 C520 505 700 525 795 640" fill="none" stroke="#ffcf72" stroke-width="18" opacity=".35"/>
-    <rect x="366" y="713" width="150" height="400" rx="40" fill="#111827" opacity=".65"/>
-    <circle cx="440" cy="650" r="45" fill="#191919" opacity=".75"/>
-    <path d="M505 740 C590 690 660 640 720 595" stroke="#141414" stroke-width="42" stroke-linecap="round" fill="none" opacity=".85"/>
-    <rect x="340" y="800" width="220" height="330" rx="30" fill="#12243f" opacity=".84"/>
-    <path d="M300 880 H1040 V1145 H300 Z" fill="#031633" opacity=".55"/>
-    <rect x="40" y="1150" width="975" height="225" rx="18" fill="#031633" stroke="#ffc400" stroke-width="3" opacity=".88"/>
-    <text x="527" y="1184" text-anchor="middle" font-family="Arial" font-size="26" font-weight="900" fill="#fff">4 NÍVEIS DE QUESTÕES</text>
-    <g font-family="Arial" font-weight="900">
-      <rect x="55" y="1188" width="220" height="155" rx="16" fill="#06204c" stroke="#61b238"/>
-      <circle cx="155" cy="1188" r="22" fill="#61b238"/><text x="155" y="1198" text-anchor="middle" font-size="26" fill="#fff">1</text>
-      <text x="105" y="1248" font-size="22" fill="#75d143">NÍVEL 1 –</text><text x="105" y="1278" font-size="17" fill="#75d143">CONTATO INICIAL</text><text x="76" y="1332" font-size="18" fill="#fff">Questões simples.</text>
-      <rect x="300" y="1188" width="220" height="155" rx="16" fill="#06204c" stroke="#36a8ff"/>
-      <circle cx="400" cy="1188" r="22" fill="#36a8ff"/><text x="400" y="1198" text-anchor="middle" font-size="26" fill="#fff">2</text>
-      <text x="350" y="1248" font-size="22" fill="#36a8ff">NÍVEL 2 –</text><text x="350" y="1278" font-size="17" fill="#36a8ff">MEMORIZAÇÃO</text><text x="322" y="1332" font-size="18" fill="#fff">Conceitos essenciais.</text>
-      <rect x="545" y="1188" width="220" height="155" rx="16" fill="#06204c" stroke="#b56bff"/>
-      <circle cx="645" cy="1188" r="22" fill="#8b4bdd"/><text x="645" y="1198" text-anchor="middle" font-size="26" fill="#fff">3</text>
-      <text x="595" y="1248" font-size="22" fill="#c992ff">NÍVEL 3 –</text><text x="595" y="1278" font-size="17" fill="#c992ff">RACIOCÍNIO</text><text x="567" y="1332" font-size="18" fill="#fff">Interpretação e lógica.</text>
-      <rect x="790" y="1188" width="220" height="155" rx="16" fill="#06204c" stroke="#ff9800"/>
-      <circle cx="890" cy="1188" r="22" fill="#ff9800"/><text x="890" y="1198" text-anchor="middle" font-size="26" fill="#fff">4</text>
-      <text x="840" y="1248" font-size="22" fill="#ff9800">NÍVEL 4 –</text><text x="840" y="1278" font-size="17" fill="#ff9800">ANÁLISE</text><text x="812" y="1332" font-size="18" fill="#fff">Pegadinhas e doutrina.</text>
-    </g>
-    <rect x="35" y="1385" width="985" height="82" rx="14" fill="#031633" stroke="#ffc400" stroke-width="3"/>
-    <text x="527" y="1426" text-anchor="middle" font-family="Arial" font-size="34" font-weight="900" fill="#fff">ESTUDE COM INTELIGÊNCIA.</text>
-    <text x="527" y="1460" text-anchor="middle" font-family="Arial" font-size="42" font-weight="900" fill="#ffc400">SEJA O PRÓXIMO NOMEADO!</text>
-  </svg>`;
-  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
