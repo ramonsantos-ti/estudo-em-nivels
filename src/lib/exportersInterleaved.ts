@@ -6,7 +6,6 @@ import {
   HorizontalPositionRelativeFrom,
   ImageRun,
   Packer,
-  PageBreak,
   Paragraph,
   Table,
   TableCell,
@@ -246,12 +245,12 @@ function buildDocxAnswerPage(q: QuestionRow, num: number): any[] {
 
 function docxAnswerHeading(q: QuestionRow, num: number): Table {
   return new Table({
-    width: { size: 62, type: WidthType.PERCENTAGE },
+    width: { size: 58, type: WidthType.PERCENTAGE },
     alignment: AlignmentType.CENTER,
     borders: tableBorders(WHITE),
     rows: [new TableRow({ children: [
-      new TableCell({ width: { size: 56, type: WidthType.PERCENTAGE }, borders: tableBorders(WHITE), margins: { top: 60, bottom: 60, left: 80, right: 110 }, verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: `QUESTÃO ${num}`, bold: true, size: 28, color: NAVY_TEXT })] })] }),
-      new TableCell({ width: { size: 44, type: WidthType.PERCENTAGE }, shading: { fill: NAVY }, borders: tableBorders(NAVY), margins: { top: 80, bottom: 80, left: 120, right: 120 }, verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "Gabarito: ", bold: true, size: 18, color: WHITE }), new TextRun({ text: q.correct, bold: true, size: 22, color: GREEN })] })] }),
+      new TableCell({ width: { size: 52, type: WidthType.PERCENTAGE }, borders: tableBorders(WHITE), margins: { top: 60, bottom: 60, left: 80, right: 110 }, verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ alignment: AlignmentType.RIGHT, children: [new TextRun({ text: `QUESTÃO ${num}`, bold: true, size: 22, color: NAVY_TEXT })] })] }),
+      new TableCell({ width: { size: 48, type: WidthType.PERCENTAGE }, shading: { fill: NAVY }, borders: tableBorders(NAVY), margins: { top: 80, bottom: 80, left: 120, right: 120 }, verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: "Gabarito: ", bold: true, size: 18, color: WHITE }), new TextRun({ text: q.correct, bold: true, size: 22, color: GREEN })] })] }),
     ] })],
   });
 }
@@ -261,7 +260,7 @@ function docxAnswerMainBlock(q: QuestionRow, num: number): Table {
     width: { size: 94, type: WidthType.PERCENTAGE },
     alignment: AlignmentType.CENTER,
     borders: tableBorders(BORDER_BLUE),
-    rows: [new TableRow({ children: [new TableCell({ verticalAlign: VerticalAlign.TOP, margins: { top: 180, bottom: 180, left: 220, right: 220 }, borders: tableBorders(BORDER_BLUE), shading: { fill: WHITE }, children: [
+    rows: [new TableRow({ children: [new TableCell({ verticalAlign: VerticalAlign.TOP, margins: { top: 180, bottom: 180, left: 180, right: 180 }, borders: tableBorders(BORDER_BLUE), shading: { fill: WHITE }, children: [
       docxAnswerHeading(q, num),
       new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 120, after: 120 }, children: [new TextRun({ text: "Explicação das alternativas", bold: true, size: 20, color: NAVY_TEXT })] }),
       ...letterAlternatives(q).map((alt) => docxAnswerAlternativeCard(alt, alt.letter === q.correct)),
@@ -275,7 +274,7 @@ function docxAnswerAlternativeCard(alt: { letter: string; exp: string | null }, 
     borders: tableBorders(isCorrect ? "C7E3CF" : BORDER_GRAY),
     rows: [new TableRow({ children: [
       new TableCell({ width: { size: 10, type: WidthType.PERCENTAGE }, verticalAlign: VerticalAlign.TOP, shading: { fill: isCorrect ? GREEN : NAVY }, margins: { top: 90, bottom: 90, left: 80, right: 80 }, borders: tableBorders(isCorrect ? GREEN : NAVY), children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: alt.letter, bold: true, color: isCorrect ? WHITE : GOLD, size: 22 })] })] }),
-      new TableCell({ width: { size: 90, type: WidthType.PERCENTAGE }, verticalAlign: VerticalAlign.TOP, shading: { fill: isCorrect ? GREEN_LIGHT : WHITE }, margins: { top: 90, bottom: 90, left: 110, right: 110 }, borders: tableBorders(isCorrect ? "C7E3CF" : BORDER_GRAY), children: [new Paragraph({ children: [new TextRun({ text: isCorrect ? "Correta: " : "Incorreta: ", bold: true, color: isCorrect ? GREEN : RED, size: 17 }), new TextRun({ text: alt.exp || "—", color: NAVY_TEXT, size: 17 })] })] }),
+      new TableCell({ width: { size: 90, type: WidthType.PERCENTAGE }, verticalAlign: VerticalAlign.TOP, shading: { fill: isCorrect ? GREEN_LIGHT : WHITE }, margins: { top: 90, bottom: 90, left: 110, right: 110 }, borders: tableBorders(isCorrect ? "C7E3CF" : BORDER_GRAY), children: [new Paragraph({ spacing: { line: 300 }, children: [new TextRun({ text: isCorrect ? "Correta: " : "Incorreta: ", bold: true, color: isCorrect ? GREEN : RED, size: 20 }), new TextRun({ text: alt.exp || "—", color: NAVY_TEXT, size: 20 })] })] }),
     ] })],
   });
 }
@@ -451,8 +450,10 @@ function drawPdfAnswerContent(doc: jsPDF, q: QuestionRow, num: number) {
 
   const blockX = safe.left;
   const blockW = safeW;
-  const altHeights = letterAlternatives(q).map((alt) => Math.max(68, 18 + measureTextHeight(doc, `${alt.letter}) ${alt.exp || "—"}`, blockW - 142, 8.5, 5)));
-  const mainH = 88 + altHeights.reduce((sum, h) => sum + h, 0) + (altHeights.length - 1) * 10 + 30;
+  const answerFontSize = 10.2;
+  const answerLineGap = 3.9;
+  const altHeights = letterAlternatives(q).map((alt) => Math.max(78, 22 + measureTextHeight(doc, `${alt.letter}) ${alt.exp || "—"}`, blockW - 110, answerFontSize, 5, answerLineGap)));
+  const mainH = 74 + altHeights.reduce((sum, h) => sum + h, 0) + (altHeights.length - 1) * 9 + 26;
   const startY = safe.top + Math.max((safeH - mainH) / 2, 0);
 
   doc.setFillColor(255, 255, 255);
@@ -460,32 +461,32 @@ function drawPdfAnswerContent(doc: jsPDF, q: QuestionRow, num: number) {
   doc.roundedRect(blockX, startY, blockW, mainH, 10, 10, "FD");
 
   doc.setFont("helvetica", "bold");
-  doc.setFontSize(20);
+  doc.setFontSize(15);
   const questionText = `QUESTÃO ${num}`;
   const boxW = 116;
-  const boxH = 31;
+  const boxH = 29;
   const gap = 14;
   const questionTextW = doc.getTextWidth(questionText);
   const rowW = questionTextW + gap + boxW;
   const rowX = pageW / 2 - rowW / 2;
-  const rowY = startY + 44;
+  const rowY = startY + 38;
 
   doc.setTextColor(...navyText);
   doc.text(questionText, rowX, rowY);
   doc.setFillColor(...navy);
-  doc.roundedRect(rowX + questionTextW + gap, startY + 22, boxW, boxH, 6, 6, "F");
+  doc.roundedRect(rowX + questionTextW + gap, startY + 18, boxW, boxH, 6, 6, "F");
   doc.setFontSize(11);
   doc.setTextColor(255, 255, 255);
-  doc.text("Gabarito:", rowX + questionTextW + gap + 16, startY + 42);
+  doc.text("Gabarito:", rowX + questionTextW + gap + 16, startY + 37);
   doc.setFontSize(17);
   doc.setTextColor(...green);
-  doc.text(q.correct, rowX + questionTextW + gap + 92, startY + 44);
+  doc.text(q.correct, rowX + questionTextW + gap + 92, startY + 39);
 
   doc.setFontSize(12);
   doc.setTextColor(...navyText);
-  doc.text("Explicação das alternativas", pageW / 2, startY + 86, { align: "center" });
+  doc.text("Explicação das alternativas", pageW / 2, startY + 72, { align: "center" });
 
-  let cy = startY + 106;
+  let cy = startY + 90;
   letterAlternatives(q).forEach((alt, index) => {
     const isCorrect = alt.letter === q.correct;
     const cardH = altHeights[index];
@@ -505,8 +506,8 @@ function drawPdfAnswerContent(doc: jsPDF, q: QuestionRow, num: number) {
     const label = isCorrect ? "Correta: " : "Incorreta: ";
     const body = `${label}${alt.exp || "—"}`;
     const prefixColor = isCorrect ? green : red;
-    drawWrappedTextWithColoredPrefix(doc, body, label, blockX + 72, cy + 16, blockW - 110, 8.5, prefixColor, navyText, 5);
-    cy += cardH + 10;
+    drawWrappedTextWithColoredPrefix(doc, body, label, blockX + 72, cy + 18, blockW - 110, answerFontSize, prefixColor, navyText, 5, answerLineGap);
+    cy += cardH + 9;
   });
 }
 
@@ -554,12 +555,12 @@ function drawJustifiedText(doc: jsPDF, text: string, x: number, y: number, maxWi
   return y + lines.length * (size + lineGap);
 }
 
-function drawWrappedTextWithColoredPrefix(doc: jsPDF, text: string, prefix: string, x: number, y: number, maxWidth: number, size: number, prefixColor: [number, number, number], bodyColor: [number, number, number], maxLines: number) {
+function drawWrappedTextWithColoredPrefix(doc: jsPDF, text: string, prefix: string, x: number, y: number, maxWidth: number, size: number, prefixColor: [number, number, number], bodyColor: [number, number, number], maxLines: number, lineGap = 3) {
   doc.setFont("helvetica", "normal");
   doc.setFontSize(size);
   const lines = doc.splitTextToSize(text, maxWidth) as string[];
   lines.slice(0, maxLines).forEach((line, index) => {
-    const lineY = y + index * (size + 3);
+    const lineY = y + index * (size + lineGap);
     if (index === 0 && line.startsWith(prefix)) {
       doc.setFont("helvetica", "bold");
       doc.setTextColor(...prefixColor);
