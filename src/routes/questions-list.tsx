@@ -130,7 +130,6 @@ function QuestionsListPage() {
         exp_c: form.exp_c || null,
         exp_d: form.exp_d || null,
         exp_e: form.exp_e || null,
-        updated_until: todayISODate(),
       };
       const { error } = await supabase.from("questions").update(payload).eq("id", editingId);
       if (error) throw error;

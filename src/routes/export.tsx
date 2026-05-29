@@ -35,7 +35,7 @@ function ExportPage() {
   const covers = useQuery({
     queryKey: ["covers-export"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("covers").select("*, themes(name)").eq("is_active", true).order("created_at", { ascending: false });
+      const { data, error } = await supabase.from("cover_models").select("id, name, image_data_url, created_at").order("created_at", { ascending: false });
       if (error) throw error;
       return data ?? [];
     },
@@ -90,9 +90,7 @@ function ExportPage() {
     setCoverId(value);
     const cover = covers.data?.find((c: any) => c.id === value);
     if (cover) {
-      const composedTitle = [cover.title_line_1, cover.title_line_2, cover.title_line_3].filter(Boolean).join(" ");
-      setTitle(composedTitle || cover.name || "Caderno de Questões");
-      if (cover.theme_id) handleThemeChange(cover.theme_id);
+      setTitle(cover.name || "Caderno de Questões");
     }
   }
 
@@ -102,9 +100,7 @@ function ExportPage() {
     }
     setBusy(format);
     try {
-      const coverTitle = selectedCover
-        ? [selectedCover.title_line_1, selectedCover.title_line_2, selectedCover.title_line_3].filter(Boolean).join(" ")
-        : "";
+      const coverTitle = selectedCover?.name ?? "";
       const opts = {
         title: title.trim() || coverTitle || "Caderno de Questões",
         questions: questions.data as any,
@@ -138,13 +134,13 @@ function ExportPage() {
                 <SelectContent>
                   <SelectItem value="none">Sem capa personalizada</SelectItem>
                   {covers.data?.map((c: any) => (
-                    <SelectItem key={c.id} value={c.id}>{c.name}{c.themes?.name ? ` — ${c.themes.name}` : ""}</SelectItem>
+                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
               {selectedCover && (
                 <p className="mt-2 text-xs text-muted-foreground">
-                  Capa selecionada: {[selectedCover.title_line_1, selectedCover.title_line_2, selectedCover.title_line_3].filter(Boolean).join(" ")} — {selectedCover.subtitle}
+                  Capa selecionada: {selectedCover.name}
                 </p>
               )}
             </div>
