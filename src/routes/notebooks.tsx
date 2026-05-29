@@ -249,24 +249,26 @@ function UploadBox({ title, image, fileName, inputRef, onUpload, onClear }: {
   onClear: () => void;
 }) {
   return (
-    <div className="space-y-2 rounded-md border p-3">
-      <Label>{title}</Label>
-      <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={(event) => onUpload(event.target.files?.[0])} />
-      {image ? (
-        <div className="space-y-2">
-          <div className="mx-auto aspect-[1055/1491] max-h-72 overflow-hidden rounded border bg-muted">
-            <img src={image} alt={title} className="h-full w-full object-fill" />
+    <div className="space-y-4 rounded-md border p-4">
+      <div className="space-y-3">
+        <Label>{title}</Label>
+        <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={(event) => onUpload(event.target.files?.[0])} />
+        {image ? (
+          <div className="space-y-2">
+            <div className="mx-auto aspect-[1055/1491] max-h-72 overflow-hidden rounded border bg-muted">
+              <img src={image} alt={title} className="h-full w-full object-fill" />
+            </div>
+            <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+              <span className="truncate">{fileName}</span>
+              <Button size="sm" variant="ghost" onClick={onClear}><X className="h-4 w-4 mr-1" />Remover</Button>
+            </div>
           </div>
-          <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-            <span className="truncate">{fileName}</span>
-            <Button size="sm" variant="ghost" onClick={onClear}><X className="h-4 w-4 mr-1" />Remover</Button>
-          </div>
-        </div>
-      ) : (
-        <Button type="button" variant="outline" onClick={() => inputRef.current?.click()}>
-          <UploadCloud className="h-4 w-4 mr-2" /> Escolher imagem
-        </Button>
-      )}
+        ) : (
+          <Button type="button" variant="outline" onClick={() => inputRef.current?.click()} className="mt-1">
+            <UploadCloud className="h-4 w-4 mr-2" /> Escolher imagem
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
