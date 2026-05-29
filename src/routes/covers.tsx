@@ -128,7 +128,7 @@ function CoversPage() {
 
   const models = modelsQuery.data ?? [];
   const selectedModel = useMemo(
-    () => models.find((model) => model.id === selectedModelId) ?? models[0] ?? null,
+    () => models.find((model) => model.id === selectedModelId) ?? null,
     [models, selectedModelId],
   );
   const selectedImage = pendingImage || selectedModel?.image_data_url || null;
@@ -199,6 +199,13 @@ function CoversPage() {
     setPendingFileName("");
     setModelName("");
     setSelectedModelId(model.id);
+  }
+
+  function confirmDeleteSelectedModel() {
+    if (!selectedModel) return;
+    const ok = confirm(`Excluir o modelo de capa "${selectedModel.name}"? Essa ação não pode ser desfeita.`);
+    if (!ok) return;
+    deleteModel.mutate(selectedModel.id);
   }
 
   function addBlock() {
@@ -342,29 +349,43 @@ function CoversPage() {
               </div>
             )}
 
-            <div className="max-h-[28vh] overflow-x-auto rounded-md border bg-muted/20 p-2">
-              <div className="flex gap-2">
-                {models.map((model) => {
-                  const active = !pendingImage && model.id === selectedModel?.id;
-                  return (
-                    <button
-                      key={model.id}
-                      type="button"
-                      onClick={() => selectSavedModel(model)}
-                      className={`w-24 shrink-0 rounded-md border p-1 text-left transition ${active ? "border-secondary ring-2 ring-secondary" : "border-border hover:border-primary"}`}
-                    >
-                      <div className="aspect-[1055/1491] overflow-hidden rounded bg-muted">
-                        <img src={model.image_data_url} alt={model.name} className="h-full w-full object-cover" />
-                      </div>
-                      <div className="mt-1 line-clamp-2 text-[11px] font-medium text-primary">{model.name}</div>
-                    </button>
-                  );
-                })}
-                {models.length === 0 && !pendingImage && !modelsQuery.isLoading && (
-                  <div className="py-6 text-sm text-muted-foreground">Nenhum modelo salvo. Escolha uma imagem e clique em Salvar modelo.</div>
-                )}
-                {modelsQuery.isLoading && <div className="py-6 text-sm text-muted-foreground">Carregando modelos...</div>}
+            <div className="grid gap-3 md:grid-cols-[1fr_auto] md:items-start">
+              <div className="max-h-[28vh] overflow-x-auto rounded-md border bg-muted/20 p-2">
+                <div className="flex gap-2">
+                  {models.map((model) => {
+                    const active = !pendingImage && model.id === selectedModel?.id;
+                    return (
+                      <button
+                        key={model.id}
+                        type="button"
+                        onClick={() => selectSavedModel(model)}
+                        className={`w-24 shrink-0 rounded-md border p-1 text-left transition ${active ? "border-secondary ring-2 ring-secondary" : "border-border hover:border-primary"}`}
+                      >
+                        <div className="aspect-[1055/1491] overflow-hidden rounded bg-muted">
+                          <img src={model.image_data_url} alt={model.name} className="h-full w-full object-cover" />
+                        </div>
+                        <div className="mt-1 line-clamp-2 text-[11px] font-medium text-primary">{model.name}</div>
+                      </button>
+                    );
+                  })}
+                  {models.length === 0 && !pendingImage && !modelsQuery.isLoading && (
+                    <div className="py-6 text-sm text-muted-foreground">Nenhum modelo salvo. Escolha uma imagem e clique em Salvar modelo.</div>
+                  )}
+                  {modelsQuery.isLoading && <div className="py-6 text-sm text-muted-foreground">Carregando modelos...</div>}
+                </div>
               </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!selectedModel || Boolean(pendingImage) || deleteModel.isPending}
+                onClick={confirmDeleteSelectedModel}
+                className="md:mt-0"
+                title={!selectedModel ? "Selecione um modelo no carrossel para excluir" : `Excluir ${selectedModel.name}`}
+              >
+                <Trash2 className="h-4 w-4 mr-2 text-destructive" />
+                {deleteModel.isPending ? "Excluindo..." : "Excluir modelo"}
+              </Button>
             </div>
           </CardContent>
         </Card>
@@ -431,17 +452,6 @@ function CoversPage() {
               <Button type="button" onClick={exportPdf} disabled={!selectedImage} className="bg-primary hover:bg-primary/90 w-full">
                 <Download className="h-4 w-4 mr-2" /> Exportar PDF
               </Button>
-
-              {!pendingImage && selectedModel && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => { if (confirm("Excluir este modelo de capa?")) deleteModel.mutate(selectedModel.id); }}
-                  className="w-full"
-                >
-                  <Trash2 className="h-4 w-4 mr-2 text-destructive" /> Excluir modelo selecionado
-                </Button>
-              )}
             </CardContent>
           </Card>
 
