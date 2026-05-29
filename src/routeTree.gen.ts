@@ -9,17 +9,12 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as CoversRouteImport } from './routes/covers'
 import { Route as QuestionsListRouteImport } from './routes/questions-list'
 import { Route as QuestionsRouteImport } from './routes/questions'
 import { Route as ExportRouteImport } from './routes/export'
+import { Route as CoversRouteImport } from './routes/covers'
 import { Route as IndexRouteImport } from './routes/index'
 
-const CoversRoute = CoversRouteImport.update({
-  id: '/covers',
-  path: '/covers',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const QuestionsListRoute = QuestionsListRouteImport.update({
   id: '/questions-list',
   path: '/questions-list',
@@ -33,6 +28,11 @@ const QuestionsRoute = QuestionsRouteImport.update({
 const ExportRoute = ExportRouteImport.update({
   id: '/export',
   path: '/export',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CoversRoute = CoversRouteImport.update({
+  id: '/covers',
+  path: '/covers',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -68,7 +68,13 @@ export interface FileRouteTypes {
   fullPaths: '/' | '/covers' | '/export' | '/questions' | '/questions-list'
   fileRoutesByTo: FileRoutesByTo
   to: '/' | '/covers' | '/export' | '/questions' | '/questions-list'
-  id: '__root__' | '/' | '/covers' | '/export' | '/questions' | '/questions-list'
+  id:
+    | '__root__'
+    | '/'
+    | '/covers'
+    | '/export'
+    | '/questions'
+    | '/questions-list'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -81,13 +87,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/covers': {
-      id: '/covers'
-      path: '/covers'
-      fullPath: '/covers'
-      preLoaderRoute: typeof CoversRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/questions-list': {
       id: '/questions-list'
       path: '/questions-list'
@@ -107,6 +106,13 @@ declare module '@tanstack/react-router' {
       path: '/export'
       fullPath: '/export'
       preLoaderRoute: typeof ExportRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/covers': {
+      id: '/covers'
+      path: '/covers'
+      fullPath: '/covers'
+      preLoaderRoute: typeof CoversRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -129,13 +135,3 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-import type { getRouter } from './router.tsx'
-import type { startInstance } from './start.ts'
-declare module '@tanstack/react-start' {
-  interface Register {
-    ssr: true
-    router: Awaited<ReturnType<typeof getRouter>>
-    config: Awaited<ReturnType<typeof startInstance.getOptions>>
-  }
-}

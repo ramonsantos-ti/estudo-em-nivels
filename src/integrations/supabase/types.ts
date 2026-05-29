@@ -14,6 +14,30 @@ export type Database = {
   }
   public: {
     Tables: {
+      cover_models: {
+        Row: {
+          created_at: string
+          id: string
+          image_data_url: string
+          name: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          image_data_url: string
+          name: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          image_data_url?: string
+          name?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       questions: {
         Row: {
           alt_a: string
