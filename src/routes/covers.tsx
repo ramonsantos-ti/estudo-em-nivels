@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Download, ImagePlus, Save, Trash2, UploadCloud, X } from "lucide-react";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
@@ -40,6 +39,8 @@ type Interaction = {
   mode: "move" | "resize";
 };
 
+const COVER_MODELS_QUERY_KEY = ["cover-models"] as const;
+
 const DEFAULT_BOXES: TextLayerBoxes = {
   title: { x: 8, y: 17, width: 84, height: 18 },
   subtitle: { x: 22, y: 35, width: 56, height: 6 },
@@ -63,15 +64,14 @@ function CoversPage() {
   const [interaction, setInteraction] = useState<Interaction | null>(null);
 
   const modelsQuery = useQuery({
-    queryKey: ["cover-models"],
+    queryKey: COVER_MODELS_QUERY_KEY,
     queryFn: async () => {
       const { data, error } = await supabase
         .from("covers")
         .select("id, name, image_data_url, created_at")
-        .not("image_data_url", "is", null)
         .order("created_at", { ascending: false });
       if (error) throw error;
-      return (data ?? []) as CoverModel[];
+      return ((data ?? []) as CoverModel[]).filter((model) => Boolean(model.image_data_url));
     },
   });
 
@@ -99,18 +99,22 @@ function CoversPage() {
           quote_text: "",
           is_active: true,
         })
-        .select("id")
+        .select("id, name, image_data_url, created_at")
         .single();
       if (error) throw error;
-      return data;
+      return data as CoverModel;
     },
-    onSuccess: (data) => {
-      toast.success("Modelo salvo");
+    onSuccess: async (savedModel) => {
+      qc.setQueryData<CoverModel[]>(COVER_MODELS_QUERY_KEY, (current = []) => {
+        const withoutDuplicate = current.filter((model) => model.id !== savedModel.id);
+        return [savedModel, ...withoutDuplicate].filter((model) => Boolean(model.image_data_url));
+      });
+      setSelectedModelId(savedModel.id);
       setPendingImage(null);
       setPendingFileName("");
       setModelName("");
-      setSelectedModelId(data.id);
-      qc.invalidateQueries({ queryKey: ["cover-models"] });
+      await qc.invalidateQueries({ queryKey: COVER_MODELS_QUERY_KEY });
+      toast.success("Modelo salvo e adicionado ao carrossel");
     },
     onError: (e: any) => toast.error(e.message),
   });
@@ -120,10 +124,11 @@ function CoversPage() {
       const { error } = await supabase.from("covers").delete().eq("id", id);
       if (error) throw error;
     },
-    onSuccess: () => {
+    onSuccess: async (_, deletedId) => {
+      qc.setQueryData<CoverModel[]>(COVER_MODELS_QUERY_KEY, (current = []) => current.filter((model) => model.id !== deletedId));
       toast.success("Modelo excluído");
       setSelectedModelId(null);
-      qc.invalidateQueries({ queryKey: ["cover-models"] });
+      await qc.invalidateQueries({ queryKey: COVER_MODELS_QUERY_KEY });
     },
     onError: (e: any) => toast.error(e.message),
   });
