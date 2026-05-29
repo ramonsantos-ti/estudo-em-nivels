@@ -18,36 +18,19 @@ export const Route = createFileRoute("/export")({
   component: ExportPage,
 });
 
-type NotebookModel = {
-  id: string;
-  name: string;
-  question_bg_data_url: string;
-  answer_bg_data_url: string;
-  created_at?: string;
-};
-
-type LevelPage = {
-  id: string;
-  level: number;
-  name: string;
-  page_data_url: string;
-  created_at?: string;
-};
-
-type TempCover = {
-  name: string;
-  dataUrl: string;
-  savedAt?: string;
-};
+type NotebookModel = { id: string; name: string; question_bg_data_url: string; answer_bg_data_url: string; created_at?: string };
+type LevelPage = { id: string; level: number; name: string; page_data_url: string; created_at?: string };
+type TempCover = { name: string; dataUrl: string; savedAt?: string };
 
 const TEMP_EXPORT_COVER_KEY = "questao-sucesso-export-cover";
+const LEVELS = [1, 2, 3, 4] as const;
 
 function ExportPage() {
   const [title, setTitle] = useState("Caderno de Questões");
   const [notebookId, setNotebookId] = useState<string>("none");
   const [themeId, setThemeId] = useState<string>("all");
   const [subthemeId, setSubthemeId] = useState<string>("all");
-  const [level, setLevel] = useState<string>("all");
+  const [selectedLevels, setSelectedLevels] = useState<number[]>([1, 2, 3, 4]);
   const [includeAnswers, setIncludeAnswers] = useState(true);
   const [busy, setBusy] = useState<null | "docx" | "pdf">(null);
   const [tempCover, setTempCover] = useState<TempCover | null>(null);
@@ -100,15 +83,8 @@ function ExportPage() {
     },
   });
 
-  const selectedNotebook = useMemo(
-    () => notebooks.data?.find((item) => item.id === notebookId) ?? null,
-    [notebooks.data, notebookId]
-  );
-
-  const selectedTheme = useMemo(
-    () => themes.data?.find((t: any) => t.id === themeId),
-    [themes.data, themeId]
-  );
+  const selectedNotebook = useMemo(() => notebooks.data?.find((item) => item.id === notebookId) ?? null, [notebooks.data, notebookId]);
+  const selectedTheme = useMemo(() => themes.data?.find((t: any) => t.id === themeId), [themes.data, themeId]);
 
   const levelPagesByLevel = useMemo(() => {
     const map: Record<number, LevelPage[]> = { 1: [], 2: [], 3: [], 4: [] };
@@ -118,7 +94,7 @@ function ExportPage() {
 
   const selectedLevelPages = useMemo(() => {
     const map: Record<number, LevelPage | undefined> = {};
-    ([1, 2, 3, 4] as const).forEach((lv) => {
+    LEVELS.forEach((lv) => {
       const selection = levelPageSelections[lv] ?? "auto";
       if (selection === "none") return;
       if (selection === "auto") map[lv] = levelPagesByLevel[lv]?.[0];
@@ -135,8 +111,9 @@ function ExportPage() {
   }, [themes.data, selectedTheme?.subthemes, themeId]);
 
   const questions = useQuery({
-    queryKey: ["export-questions", themeId, subthemeId, level],
+    queryKey: ["export-questions", themeId, subthemeId, selectedLevels.join(",")],
     queryFn: async () => {
+      if (selectedLevels.length === 0) return [];
       let q = supabase
         .from("questions")
         .select("*, themes(name), subthemes(name)")
@@ -145,7 +122,7 @@ function ExportPage() {
         .order("created_at");
       if (themeId !== "all") q = q.eq("theme_id", themeId);
       if (subthemeId !== "all") q = q.eq("subtheme_id", subthemeId);
-      if (level !== "all") q = q.eq("level", Number(level));
+      q = q.in("level", selectedLevels);
       const { data, error } = await q;
       if (error) throw error;
       return data ?? [];
@@ -153,7 +130,7 @@ function ExportPage() {
   });
 
   const byLevel = useMemo(() => {
-    return [1, 2, 3, 4].map((lv) => ({ lv, n: questions.data?.filter((x: any) => x.level === lv).length ?? 0 }));
+    return LEVELS.map((lv) => ({ lv, n: questions.data?.filter((x: any) => x.level === lv).length ?? 0 }));
   }, [questions.data]);
 
   function handleThemeChange(value: string) {
@@ -171,7 +148,18 @@ function ExportPage() {
     setLevelPageSelections((current) => ({ ...current, [levelNumber]: value }));
   }
 
+  function toggleQuestionLevel(levelNumber: number, checked: boolean) {
+    setSelectedLevels((current) => {
+      const next = checked ? Array.from(new Set([...current, levelNumber])) : current.filter((item) => item !== levelNumber);
+      return next.sort((a, b) => a - b);
+    });
+  }
+
   async function handle(format: "docx" | "pdf") {
+    if (selectedLevels.length === 0) {
+      toast.error("Selecione ao menos um nível de questões.");
+      return;
+    }
     if (!questions.data || questions.data.length === 0) {
       toast.error("Nenhuma questão para exportar com os filtros atuais.");
       return;
@@ -194,7 +182,7 @@ function ExportPage() {
       };
       if (format === "docx") await exportDocxInterleaved(opts);
       else await exportPdfInterleaved(opts);
-      toast.success(`Arquivo(s) ${format.toUpperCase()} gerado(s) por nível!`);
+      toast.success(`Arquivo ${format.toUpperCase()} gerado!`);
     } catch (e: any) {
       toast.error(e.message);
     } finally {
@@ -207,7 +195,7 @@ function ExportPage() {
       <div className="max-w-7xl mx-auto space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-primary">Exportar ebook</h1>
-          <p className="text-muted-foreground">Configure capa, páginas de nível e fundos de questão/gabarito antes de gerar os arquivos por nível.</p>
+          <p className="text-muted-foreground">Configure capa, páginas de nível e fundos de questão/gabarito antes de gerar um único arquivo.</p>
         </div>
 
         <Card>
@@ -220,14 +208,12 @@ function ExportPage() {
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="none">Usar fundo padrão</SelectItem>
-                    {notebooks.data?.map((item) => (
-                      <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>
-                    ))}
+                    {notebooks.data?.map((item) => <SelectItem key={item.id} value={item.id}>{item.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <Label>Título base dos arquivos</Label>
+                <Label>Título base do arquivo</Label>
                 <Input value={title} onChange={(e) => setTitle(e.target.value)} />
               </div>
             </div>
@@ -235,7 +221,7 @@ function ExportPage() {
             <div>
               <Label>Imagens de abertura dos níveis</Label>
               <div className="mt-2 grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                {[1, 2, 3, 4].map((lv) => (
+                {LEVELS.map((lv) => (
                   <div key={lv}>
                     <Label className="text-xs">Nível {lv}</Label>
                     <Select value={levelPageSelections[lv] ?? "auto"} onValueChange={(value) => updateLevelPageSelection(lv, value)}>
@@ -243,9 +229,7 @@ function ExportPage() {
                       <SelectContent>
                         <SelectItem value="auto">Usar mais recente</SelectItem>
                         <SelectItem value="none">Não incluir</SelectItem>
-                        {levelPagesByLevel[lv]?.map((page) => (
-                          <SelectItem key={page.id} value={page.id}>{page.name}</SelectItem>
-                        ))}
+                        {levelPagesByLevel[lv]?.map((page) => <SelectItem key={page.id} value={page.id}>{page.name}</SelectItem>)}
                       </SelectContent>
                     </Select>
                   </div>
@@ -253,7 +237,7 @@ function ExportPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
               <div>
                 <Label>Tema</Label>
                 <Select value={themeId} onValueChange={handleThemeChange}>
@@ -271,22 +255,22 @@ function ExportPage() {
                   <SelectContent>
                     <SelectItem value="all">Todos os subtemas</SelectItem>
                     {availableSubthemes.map((s: any) => (
-                      <SelectItem key={s.id} value={s.id}>
-                        {themeId === "all" && s.themeName ? `${s.themeName} › ${s.name}` : s.name}
-                      </SelectItem>
+                      <SelectItem key={s.id} value={s.id}>{themeId === "all" && s.themeName ? `${s.themeName} › ${s.name}` : s.name}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label>Nível das questões</Label>
-                <Select value={level} onValueChange={setLevel}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos os níveis</SelectItem>
-                    {[1, 2, 3, 4].map((n) => <SelectItem key={n} value={String(n)}>Nível {n}</SelectItem>)}
-                  </SelectContent>
-                </Select>
+            </div>
+
+            <div>
+              <Label>Níveis das questões</Label>
+              <div className="mt-2 flex flex-wrap gap-4 rounded-md border bg-muted/20 p-3">
+                {LEVELS.map((lv) => (
+                  <label key={lv} className="flex items-center gap-2 cursor-pointer text-sm">
+                    <Checkbox checked={selectedLevels.includes(lv)} onCheckedChange={(v) => toggleQuestionLevel(lv, Boolean(v))} />
+                    <span>Nível {lv}</span>
+                  </label>
+                ))}
               </div>
             </div>
 
@@ -303,8 +287,8 @@ function ExportPage() {
             <div className="overflow-x-auto rounded-md border bg-muted/20 p-3">
               <div className="flex min-w-max gap-3">
                 <PreviewCard title="Capa" subtitle={tempCover?.name ?? "Nenhuma"} image={tempCover?.dataUrl} emptyText="Sem capa" onClear={tempCover ? clearTempCover : undefined} />
-                {[1, 2, 3, 4].map((lv) => (
-                  <PreviewCard key={lv} title={`Nível ${lv}`} subtitle={`${byLevel.find((b) => b.lv === lv)?.n ?? 0} questão(ões)`} image={selectedLevelPages[lv]?.page_data_url} emptyText="Sem página" />
+                {LEVELS.map((lv) => (
+                  <PreviewCard key={lv} title={`Nível ${lv}`} subtitle={`${byLevel.find((b) => b.lv === lv)?.n ?? 0} questão(ões)`} image={selectedLevelPages[lv]?.page_data_url} emptyText="Sem página" muted={!selectedLevels.includes(lv)} />
                 ))}
                 <PreviewCard title="Questão" subtitle={selectedNotebook?.name ?? "Padrão"} image={selectedNotebook?.question_bg_data_url} emptyText="Fundo padrão" />
                 <PreviewCard title="Gabarito" subtitle={selectedNotebook?.name ?? "Padrão"} image={selectedNotebook?.answer_bg_data_url} emptyText="Fundo padrão" />
@@ -319,16 +303,16 @@ function ExportPage() {
             <div className="text-xs text-muted-foreground mt-1 flex gap-4">
               {byLevel.map((b) => <span key={b.lv}>Nível {b.lv}: <strong>{b.n}</strong></span>)}
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">Será gerado um arquivo separado para cada nível que possuir questões selecionadas.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Será gerado um único arquivo contendo os níveis selecionados.</p>
           </CardContent>
         </Card>
 
         <div className="flex gap-3">
           <Button onClick={() => handle("docx")} disabled={busy !== null} className="bg-primary hover:bg-primary/90 flex-1">
-            <FileText className="h-4 w-4 mr-2" /> {busy === "docx" ? "Gerando..." : "Exportar DOCX por nível"}
+            <FileText className="h-4 w-4 mr-2" /> {busy === "docx" ? "Gerando..." : "Exportar DOCX"}
           </Button>
           <Button onClick={() => handle("pdf")} disabled={busy !== null} variant="outline" className="border-primary text-primary flex-1">
-            <FileDown className="h-4 w-4 mr-2" /> {busy === "pdf" ? "Gerando..." : "Exportar PDF por nível"}
+            <FileDown className="h-4 w-4 mr-2" /> {busy === "pdf" ? "Gerando..." : "Exportar PDF"}
           </Button>
         </div>
       </div>
@@ -336,9 +320,9 @@ function ExportPage() {
   );
 }
 
-function PreviewCard({ title, subtitle, image, emptyText, onClear }: { title: string; subtitle?: string; image?: string; emptyText: string; onClear?: () => void }) {
+function PreviewCard({ title, subtitle, image, emptyText, onClear, muted = false }: { title: string; subtitle?: string; image?: string; emptyText: string; onClear?: () => void; muted?: boolean }) {
   return (
-    <div className="w-32 shrink-0 rounded-md border bg-background p-2">
+    <div className={`w-32 shrink-0 rounded-md border bg-background p-2 ${muted ? "opacity-40" : ""}`}>
       <div className="mb-1 flex items-center justify-between gap-1">
         <div className="text-xs font-semibold text-primary">{title}</div>
         {onClear && <button type="button" onClick={onClear} className="rounded p-0.5 hover:bg-muted" title="Remover"><X className="h-3 w-3" /></button>}
