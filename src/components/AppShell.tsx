@@ -17,6 +17,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <NavLink to="/">Temas</NavLink>
             <NavLink to="/questions">Cadastrar questões</NavLink>
             <NavLink to="/questions-list">Listar questões</NavLink>
+            <NavLink to="/covers">Capas</NavLink>
             <NavLink to="/export">Exportar</NavLink>
           </nav>
         </div>
