@@ -28,7 +28,6 @@ type NotebookModel = {
 
 function ExportPage() {
   const [title, setTitle] = useState("Caderno de Questões");
-  const [coverId, setCoverId] = useState<string>("none");
   const [notebookId, setNotebookId] = useState<string>("none");
   const [themeId, setThemeId] = useState<string>("all");
   const [subthemeId, setSubthemeId] = useState<string>("all");
@@ -39,15 +38,6 @@ function ExportPage() {
   const themes = useQuery({
     queryKey: ["themes-list-export"],
     queryFn: async () => (await supabase.from("themes").select("id, name, subthemes(id, name)").order("name")).data ?? [],
-  });
-
-  const covers = useQuery({
-    queryKey: ["covers-export"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("cover_models").select("id, name, image_data_url, created_at").order("created_at", { ascending: false });
-      if (error) throw error;
-      return data ?? [];
-    },
   });
 
   const notebooks = useQuery({
@@ -61,11 +51,6 @@ function ExportPage() {
       return (data ?? []) as NotebookModel[];
     },
   });
-
-  const selectedCover = useMemo(
-    () => covers.data?.find((c: any) => c.id === coverId),
-    [covers.data, coverId]
-  );
 
   const selectedNotebook = useMemo(
     () => notebooks.data?.find((item) => item.id === notebookId) ?? null,
@@ -112,14 +97,6 @@ function ExportPage() {
     setSubthemeId("all");
   }
 
-  function handleCoverChange(value: string) {
-    setCoverId(value);
-    const cover = covers.data?.find((c: any) => c.id === value);
-    if (cover) {
-      setTitle(cover.name || "Caderno de Questões");
-    }
-  }
-
   async function handle(format: "docx" | "pdf") {
     if (!questions.data || questions.data.length === 0) {
       toast.error("Nenhuma questão para exportar com os filtros atuais.");
@@ -127,11 +104,12 @@ function ExportPage() {
     }
     setBusy(format);
     try {
-      const coverTitle = selectedCover?.name ?? "";
       const opts = {
-        title: title.trim() || coverTitle || "Caderno de Questões",
+        title: title.trim() || "Caderno de Questões",
         questions: questions.data as any,
         includeAnswers,
+        questionBackgroundDataUrl: selectedNotebook?.question_bg_data_url,
+        answerBackgroundDataUrl: selectedNotebook?.answer_bg_data_url,
       };
       if (format === "docx") await exportDocxInterleaved(opts);
       else await exportPdfInterleaved(opts);
@@ -157,25 +135,7 @@ function ExportPage() {
               <CardHeader><CardTitle>Configuração</CardTitle></CardHeader>
               <CardContent className="space-y-4">
                 <div>
-                  <Label>Capa personalizada</Label>
-                  <Select value={coverId} onValueChange={handleCoverChange}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Sem capa personalizada</SelectItem>
-                      {covers.data?.map((c: any) => (
-                        <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {selectedCover && (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      Capa selecionada: {selectedCover.name}
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <Label>Caderno visual</Label>
+                  <Label>Par de imagens para exportação</Label>
                   <Select value={notebookId} onValueChange={setNotebookId}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -185,9 +145,13 @@ function ExportPage() {
                       ))}
                     </SelectContent>
                   </Select>
-                  {selectedNotebook && (
+                  {selectedNotebook ? (
                     <p className="mt-2 text-xs text-muted-foreground">
-                      Caderno selecionado: {selectedNotebook.name}. Confira as imagens na prévia à direita.
+                      As imagens do caderno "{selectedNotebook.name}" serão usadas nas páginas de questão e gabarito exportadas.
+                    </p>
+                  ) : (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Nenhum par selecionado. A exportação usará os fundos padrão do sistema.
                     </p>
                   )}
                 </div>
@@ -259,7 +223,7 @@ function ExportPage() {
           </div>
 
           <Card className="lg:sticky lg:top-6">
-            <CardHeader><CardTitle>Conferência do caderno</CardTitle></CardHeader>
+            <CardHeader><CardTitle>Conferência do par selecionado</CardTitle></CardHeader>
             <CardContent>
               {selectedNotebook ? (
                 <div className="space-y-3">
@@ -271,7 +235,7 @@ function ExportPage() {
                 </div>
               ) : (
                 <div className="rounded-md border bg-muted/30 p-4 text-sm text-muted-foreground">
-                  Selecione um caderno visual para conferir, lado a lado, a imagem de fundo da questão e a imagem de fundo do gabarito.
+                  Selecione um par de imagens para conferir, lado a lado, o fundo da questão e o fundo do gabarito que serão usados no arquivo.
                 </div>
               )}
             </CardContent>
