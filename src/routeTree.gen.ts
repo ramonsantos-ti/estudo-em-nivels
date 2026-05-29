@@ -123,13 +123,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/levels': {
-      id: '/levels'
-      path: '/levels'
-      fullPath: '/levels'
-      preLoaderRoute: typeof LevelsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/questions-list': {
       id: '/questions-list'
       path: '/questions-list'
@@ -149,6 +142,13 @@ declare module '@tanstack/react-router' {
       path: '/notebooks'
       fullPath: '/notebooks'
       preLoaderRoute: typeof NotebooksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/levels': {
+      id: '/levels'
+      path: '/levels'
+      fullPath: '/levels'
+      preLoaderRoute: typeof LevelsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/export': {
