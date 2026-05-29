@@ -17,6 +17,7 @@ export type Database = {
           badge_text: string
           created_at: string
           id: string
+          image_data_url: string | null
           is_active: boolean
           name: string
           quote_text: string
@@ -31,6 +32,7 @@ export type Database = {
           badge_text?: string
           created_at?: string
           id?: string
+          image_data_url?: string | null
           is_active?: boolean
           name: string
           quote_text?: string
@@ -45,6 +47,7 @@ export type Database = {
           badge_text?: string
           created_at?: string
           id?: string
+          image_data_url?: string | null
           is_active?: boolean
           name?: string
           quote_text?: string
