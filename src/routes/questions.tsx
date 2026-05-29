@@ -97,6 +97,10 @@ const emptyForm = (theme_id = ""): Form => ({
   exp_a: "", exp_b: "", exp_c: "", exp_d: "", exp_e: "",
 });
 
+function todayISODate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function QuestionsPage() {
   const { themeId } = Route.useSearch();
   const qc = useQueryClient();
@@ -150,6 +154,7 @@ function QuestionsPage() {
         exp_c: form.exp_c || null,
         exp_d: form.exp_d || null,
         exp_e: form.exp_e || null,
+        updated_until: todayISODate(),
       };
       const { error } = await supabase.from("questions").insert(payload);
       if (error) throw error;
@@ -251,6 +256,10 @@ function QuestionsPage() {
                 </div>
               </div>
             </details>
+
+            <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+              Atualizada até: <strong>{formatDate(todayISODate())}</strong>. Essa informação é interna e não aparece na exportação.
+            </div>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -431,4 +440,10 @@ function loadLastQuestionContext(): LastQuestionContext | null {
   } catch {
     return null;
   }
+}
+
+function formatDate(value: string) {
+  if (!value) return "—";
+  const [year, month, day] = value.slice(0, 10).split("-");
+  return `${day}/${month}/${year}`;
 }
