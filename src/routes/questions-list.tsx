@@ -28,7 +28,12 @@ type Form = {
   alt_a: string; alt_b: string; alt_c: string; alt_d: string; alt_e: string;
   correct: "A" | "B" | "C" | "D" | "E";
   exp_a: string; exp_b: string; exp_c: string; exp_d: string; exp_e: string;
+  updated_until: string;
 };
+
+function todayISODate() {
+  return new Date().toISOString().slice(0, 10);
+}
 
 function QuestionsListPage() {
   const qc = useQueryClient();
@@ -95,6 +100,7 @@ function QuestionsListPage() {
           item.exp_c,
           item.exp_d,
           item.exp_e,
+          item.updated_until,
           item.themes?.name,
           item.subthemes?.name,
         ].filter(Boolean).join(" "));
@@ -124,6 +130,7 @@ function QuestionsListPage() {
         exp_c: form.exp_c || null,
         exp_d: form.exp_d || null,
         exp_e: form.exp_e || null,
+        updated_until: todayISODate(),
       };
       const { error } = await supabase.from("questions").update(payload).eq("id", editingId);
       if (error) throw error;
@@ -184,6 +191,9 @@ function QuestionsListPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4 pt-6">
+              <div className="rounded-md border bg-muted/30 p-3 text-sm text-muted-foreground">
+                Atualizada até atual: <strong>{formatDate(form.updated_until)}</strong>. Ao salvar alterações, será atualizada para <strong>{formatDate(todayISODate())}</strong>.
+              </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <Label>Tema</Label>
@@ -326,6 +336,7 @@ function QuestionsListPage() {
                       <Badge className="bg-primary text-primary-foreground">Nível {q.level}</Badge>
                       {q.number && <Badge variant="outline">Q{q.number}</Badge>}
                       <Badge className="bg-secondary text-secondary-foreground">Gab: {q.correct}</Badge>
+                      <Badge variant="outline">Atualizada até: {formatDate(q.updated_until || q.created_at)}</Badge>
                       <span className="text-xs text-muted-foreground">{q.themes?.name}{q.subthemes?.name ? ` › ${q.subthemes.name}` : ""}</span>
                     </div>
                     {q.intro && <p className="text-sm text-muted-foreground line-clamp-2">{q.intro}</p>}
@@ -366,6 +377,7 @@ function rowToForm(q: any): Form {
     exp_c: q.exp_c ?? "",
     exp_d: q.exp_d ?? "",
     exp_e: q.exp_e ?? "",
+    updated_until: q.updated_until ?? q.created_at?.slice(0, 10) ?? todayISODate(),
   };
 }
 
@@ -375,4 +387,11 @@ function normalize(value: string) {
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim();
+}
+
+function formatDate(value: string) {
+  if (!value) return "—";
+  const [year, month, day] = value.slice(0, 10).split("-");
+  if (!year || !month || !day) return value;
+  return `${day}/${month}/${year}`;
 }
