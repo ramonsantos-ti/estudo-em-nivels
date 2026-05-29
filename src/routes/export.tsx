@@ -9,7 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { exportDocx, exportPdf } from "@/lib/exporters";
+import { exportDocxInterleaved, exportPdfInterleaved } from "@/lib/exportersInterleaved";
 import { FileText, FileDown } from "lucide-react";
 import { toast } from "sonner";
 
@@ -21,20 +21,39 @@ export const Route = createFileRoute("/export")({
 function ExportPage() {
   const [title, setTitle] = useState("Caderno de Questões");
   const [themeId, setThemeId] = useState<string>("all");
+  const [subthemeId, setSubthemeId] = useState<string>("all");
   const [level, setLevel] = useState<string>("all");
   const [includeAnswers, setIncludeAnswers] = useState(true);
   const [busy, setBusy] = useState<null | "docx" | "pdf">(null);
 
   const themes = useQuery({
-    queryKey: ["themes-list"],
-    queryFn: async () => (await supabase.from("themes").select("id, name").order("name")).data ?? [],
+    queryKey: ["themes-list-export"],
+    queryFn: async () => (await supabase.from("themes").select("id, name, subthemes(id, name)").order("name")).data ?? [],
   });
 
+  const selectedTheme = useMemo(
+    () => themes.data?.find((t: any) => t.id === themeId),
+    [themes.data, themeId]
+  );
+
+  const availableSubthemes = useMemo(() => {
+    if (themeId === "all") {
+      return themes.data?.flatMap((t: any) => (t.subthemes ?? []).map((s: any) => ({ ...s, themeName: t.name }))) ?? [];
+    }
+    return selectedTheme?.subthemes ?? [];
+  }, [themes.data, selectedTheme?.subthemes, themeId]);
+
   const questions = useQuery({
-    queryKey: ["export-questions", themeId, level],
+    queryKey: ["export-questions", themeId, subthemeId, level],
     queryFn: async () => {
-      let q = supabase.from("questions").select("*, themes(name), subthemes(name)").order("level").order("number");
+      let q = supabase
+        .from("questions")
+        .select("*, themes(name), subthemes(name)")
+        .order("level")
+        .order("number", { nullsFirst: false })
+        .order("created_at");
       if (themeId !== "all") q = q.eq("theme_id", themeId);
+      if (subthemeId !== "all") q = q.eq("subtheme_id", subthemeId);
       if (level !== "all") q = q.eq("level", Number(level));
       const { data, error } = await q;
       if (error) throw error;
@@ -47,6 +66,11 @@ function ExportPage() {
     return counts;
   }, [questions.data]);
 
+  function handleThemeChange(value: string) {
+    setThemeId(value);
+    setSubthemeId("all");
+  }
+
   async function handle(format: "docx" | "pdf") {
     if (!questions.data || questions.data.length === 0) {
       toast.error("Nenhuma questão para exportar com os filtros atuais."); return;
@@ -54,8 +78,8 @@ function ExportPage() {
     setBusy(format);
     try {
       const opts = { title: title.trim() || "Caderno de Questões", questions: questions.data as any, includeAnswers };
-      if (format === "docx") await exportDocx(opts);
-      else await exportPdf(opts);
+      if (format === "docx") await exportDocxInterleaved(opts);
+      else await exportPdfInterleaved(opts);
       toast.success(`Arquivo ${format.toUpperCase()} gerado!`);
     } catch (e: any) {
       toast.error(e.message);
@@ -69,7 +93,7 @@ function ExportPage() {
       <div className="max-w-3xl mx-auto space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-primary">Exportar ebook</h1>
-          <p className="text-muted-foreground">Gere um arquivo DOCX ou PDF com a identidade visual da Questão de Sucesso.</p>
+          <p className="text-muted-foreground">Gere um arquivo DOCX ou PDF com a lógica questão → gabarito comentado.</p>
         </div>
 
         <Card>
@@ -82,11 +106,25 @@ function ExportPage() {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <Label>Tema</Label>
-                <Select value={themeId} onValueChange={setThemeId}>
+                <Select value={themeId} onValueChange={handleThemeChange}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Todos os temas</SelectItem>
                     {themes.data?.map((t: any) => <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Subtema</Label>
+                <Select value={subthemeId} onValueChange={setSubthemeId} disabled={availableSubthemes.length === 0}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos os subtemas</SelectItem>
+                    {availableSubthemes.map((s: any) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {themeId === "all" && s.themeName ? `${s.themeName} › ${s.name}` : s.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -103,7 +141,7 @@ function ExportPage() {
             </div>
             <label className="flex items-center gap-2 cursor-pointer">
               <Checkbox checked={includeAnswers} onCheckedChange={(v) => setIncludeAnswers(Boolean(v))} />
-              <span className="text-sm">Incluir gabarito comentado ao final</span>
+              <span className="text-sm">Incluir gabarito comentado após cada questão</span>
             </label>
           </CardContent>
         </Card>
