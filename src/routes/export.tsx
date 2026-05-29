@@ -20,6 +20,7 @@ export const Route = createFileRoute("/export")({
 
 function ExportPage() {
   const [title, setTitle] = useState("Caderno de Questões");
+  const [coverId, setCoverId] = useState<string>("none");
   const [themeId, setThemeId] = useState<string>("all");
   const [subthemeId, setSubthemeId] = useState<string>("all");
   const [level, setLevel] = useState<string>("all");
@@ -30,6 +31,20 @@ function ExportPage() {
     queryKey: ["themes-list-export"],
     queryFn: async () => (await supabase.from("themes").select("id, name, subthemes(id, name)").order("name")).data ?? [],
   });
+
+  const covers = useQuery({
+    queryKey: ["covers-export"],
+    queryFn: async () => {
+      const { data, error } = await supabase.from("covers").select("*, themes(name)").eq("is_active", true).order("created_at", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const selectedCover = useMemo(
+    () => covers.data?.find((c: any) => c.id === coverId),
+    [covers.data, coverId]
+  );
 
   const selectedTheme = useMemo(
     () => themes.data?.find((t: any) => t.id === themeId),
@@ -71,13 +86,30 @@ function ExportPage() {
     setSubthemeId("all");
   }
 
+  function handleCoverChange(value: string) {
+    setCoverId(value);
+    const cover = covers.data?.find((c: any) => c.id === value);
+    if (cover) {
+      const composedTitle = [cover.title_line_1, cover.title_line_2, cover.title_line_3].filter(Boolean).join(" ");
+      setTitle(composedTitle || cover.name || "Caderno de Questões");
+      if (cover.theme_id) handleThemeChange(cover.theme_id);
+    }
+  }
+
   async function handle(format: "docx" | "pdf") {
     if (!questions.data || questions.data.length === 0) {
       toast.error("Nenhuma questão para exportar com os filtros atuais."); return;
     }
     setBusy(format);
     try {
-      const opts = { title: title.trim() || "Caderno de Questões", questions: questions.data as any, includeAnswers };
+      const coverTitle = selectedCover
+        ? [selectedCover.title_line_1, selectedCover.title_line_2, selectedCover.title_line_3].filter(Boolean).join(" ")
+        : "";
+      const opts = {
+        title: title.trim() || coverTitle || "Caderno de Questões",
+        questions: questions.data as any,
+        includeAnswers,
+      };
       if (format === "docx") await exportDocxInterleaved(opts);
       else await exportPdfInterleaved(opts);
       toast.success(`Arquivo ${format.toUpperCase()} gerado!`);
@@ -99,6 +131,23 @@ function ExportPage() {
         <Card>
           <CardHeader><CardTitle>Configuração</CardTitle></CardHeader>
           <CardContent className="space-y-4">
+            <div>
+              <Label>Capa personalizada</Label>
+              <Select value={coverId} onValueChange={handleCoverChange}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Sem capa personalizada</SelectItem>
+                  {covers.data?.map((c: any) => (
+                    <SelectItem key={c.id} value={c.id}>{c.name}{c.themes?.name ? ` — ${c.themes.name}` : ""}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {selectedCover && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Capa selecionada: {[selectedCover.title_line_1, selectedCover.title_line_2, selectedCover.title_line_3].filter(Boolean).join(" ")} — {selectedCover.subtitle}
+                </p>
+              )}
+            </div>
             <div>
               <Label>Título do caderno</Label>
               <Input value={title} onChange={(e) => setTitle(e.target.value)} />
