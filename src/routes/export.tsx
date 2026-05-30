@@ -20,6 +20,7 @@ export const Route = createFileRoute("/export")({
 
 type NotebookModel = { id: string; name: string; question_bg_data_url: string; answer_bg_data_url: string; created_at?: string };
 type LevelPage = { id: string; level: number; name: string; page_data_url: string; created_at?: string };
+type AboutPageModel = { id: string; name: string; description: string | null; page_data_url: string; created_at?: string };
 type TempCover = { name: string; dataUrl: string; savedAt?: string };
 
 const TEMP_EXPORT_COVER_KEY = "questao-sucesso-export-cover";
@@ -31,6 +32,7 @@ function ExportPage() {
   const [themeId, setThemeId] = useState<string>("all");
   const [subthemeId, setSubthemeId] = useState<string>("all");
   const [selectedLevels, setSelectedLevels] = useState<number[]>([1, 2, 3, 4]);
+  const [selectedAboutPageIds, setSelectedAboutPageIds] = useState<string[]>([]);
   const [includeAnswers, setIncludeAnswers] = useState(true);
   const [busy, setBusy] = useState<null | "docx" | "pdf">(null);
   const [tempCover, setTempCover] = useState<TempCover | null>(null);
@@ -62,10 +64,7 @@ function ExportPage() {
   const notebooks = useQuery({
     queryKey: ["notebook-models-export"],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
-        .from("notebook_models")
-        .select("id, name, question_bg_data_url, answer_bg_data_url, created_at")
-        .order("created_at", { ascending: false });
+      const { data, error } = await (supabase as any).from("notebook_models").select("id, name, question_bg_data_url, answer_bg_data_url, created_at").order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as NotebookModel[];
     },
@@ -74,12 +73,18 @@ function ExportPage() {
   const levelPages = useQuery({
     queryKey: ["level-pages-export"],
     queryFn: async () => {
-      const { data, error } = await (supabase as any)
-        .from("level_pages")
-        .select("id, level, name, page_data_url, created_at")
-        .order("created_at", { ascending: false });
+      const { data, error } = await (supabase as any).from("level_pages").select("id, level, name, page_data_url, created_at").order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as LevelPage[];
+    },
+  });
+
+  const aboutPages = useQuery({
+    queryKey: ["about-pages-export"],
+    queryFn: async () => {
+      const { data, error } = await (supabase as any).from("about_pages").select("id, name, description, page_data_url, created_at").order("created_at", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as AboutPageModel[];
     },
   });
 
@@ -103,10 +108,13 @@ function ExportPage() {
     return map;
   }, [levelPageSelections, levelPagesByLevel]);
 
+  const selectedAboutPages = useMemo(() => {
+    const idSet = new Set(selectedAboutPageIds);
+    return (aboutPages.data ?? []).filter((page) => idSet.has(page.id));
+  }, [aboutPages.data, selectedAboutPageIds]);
+
   const availableSubthemes = useMemo(() => {
-    if (themeId === "all") {
-      return themes.data?.flatMap((t: any) => (t.subthemes ?? []).map((s: any) => ({ ...s, themeName: t.name }))) ?? [];
-    }
+    if (themeId === "all") return themes.data?.flatMap((t: any) => (t.subthemes ?? []).map((s: any) => ({ ...s, themeName: t.name }))) ?? [];
     return selectedTheme?.subthemes ?? [];
   }, [themes.data, selectedTheme?.subthemes, themeId]);
 
@@ -114,12 +122,7 @@ function ExportPage() {
     queryKey: ["export-questions", themeId, subthemeId, selectedLevels.join(",")],
     queryFn: async () => {
       if (selectedLevels.length === 0) return [];
-      let q = supabase
-        .from("questions")
-        .select("*, themes(name), subthemes(name)")
-        .order("level")
-        .order("number", { nullsFirst: false })
-        .order("created_at");
+      let q = supabase.from("questions").select("*, themes(name), subthemes(name)").order("level").order("number", { nullsFirst: false }).order("created_at");
       if (themeId !== "all") q = q.eq("theme_id", themeId);
       if (subthemeId !== "all") q = q.eq("subtheme_id", subthemeId);
       q = q.in("level", selectedLevels);
@@ -129,9 +132,7 @@ function ExportPage() {
     },
   });
 
-  const byLevel = useMemo(() => {
-    return LEVELS.map((lv) => ({ lv, n: questions.data?.filter((x: any) => x.level === lv).length ?? 0 }));
-  }, [questions.data]);
+  const byLevel = useMemo(() => LEVELS.map((lv) => ({ lv, n: questions.data?.filter((x: any) => x.level === lv).length ?? 0 })), [questions.data]);
 
   function handleThemeChange(value: string) {
     setThemeId(value);
@@ -155,6 +156,10 @@ function ExportPage() {
     });
   }
 
+  function toggleAboutPage(id: string, checked: boolean) {
+    setSelectedAboutPageIds((current) => checked ? [...current, id] : current.filter((item) => item !== id));
+  }
+
   async function handle(format: "docx" | "pdf") {
     if (selectedLevels.length === 0) {
       toast.error("Selecione ao menos um nível de questões.");
@@ -171,6 +176,7 @@ function ExportPage() {
         questions: questions.data as any,
         includeAnswers,
         coverDataUrl: tempCover?.dataUrl,
+        aboutPageDataUrls: selectedAboutPages.map((page) => page.page_data_url),
         questionBackgroundDataUrl: selectedNotebook?.question_bg_data_url,
         answerBackgroundDataUrl: selectedNotebook?.answer_bg_data_url,
         levelPageDataUrls: {
@@ -195,7 +201,7 @@ function ExportPage() {
       <div className="max-w-7xl mx-auto space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-primary">Exportar ebook</h1>
-          <p className="text-muted-foreground">Configure capa, páginas de nível e fundos de questão/gabarito antes de gerar um único arquivo.</p>
+          <p className="text-muted-foreground">Configure capa, páginas Sobre nós, páginas de nível e fundos de questão/gabarito antes de gerar um único arquivo.</p>
         </div>
 
         <Card>
@@ -216,6 +222,25 @@ function ExportPage() {
                 <Label>Título base do arquivo</Label>
                 <Input value={title} onChange={(e) => setTitle(e.target.value)} />
               </div>
+            </div>
+
+            <div>
+              <Label>Páginas Sobre nós</Label>
+              <div className="mt-2 max-h-48 overflow-y-auto rounded-md border bg-muted/20 p-3">
+                <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+                  {(aboutPages.data ?? []).map((page) => (
+                    <label key={page.id} className="flex items-start gap-2 rounded-md border bg-background p-2 text-sm cursor-pointer">
+                      <Checkbox checked={selectedAboutPageIds.includes(page.id)} onCheckedChange={(v) => toggleAboutPage(page.id, Boolean(v))} />
+                      <span>
+                        <span className="block font-medium text-primary">{page.name}</span>
+                        <span className="line-clamp-2 text-xs text-muted-foreground">{page.description || "Sem descrição"}</span>
+                      </span>
+                    </label>
+                  ))}
+                  {aboutPages.data?.length === 0 && <div className="text-sm text-muted-foreground">Nenhuma página cadastrada no menu Sobre nós.</div>}
+                </div>
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">As páginas selecionadas entram após a capa e antes da primeira página de nível.</p>
             </div>
 
             <div>
@@ -287,6 +312,7 @@ function ExportPage() {
             <div className="overflow-x-auto rounded-md border bg-muted/20 p-3">
               <div className="flex min-w-max gap-3">
                 <PreviewCard title="Capa" subtitle={tempCover?.name ?? "Nenhuma"} image={tempCover?.dataUrl} emptyText="Sem capa" onClear={tempCover ? clearTempCover : undefined} />
+                {selectedAboutPages.map((page) => <PreviewCard key={page.id} title="Sobre nós" subtitle={page.name} image={page.page_data_url} emptyText="Sem página" />)}
                 {LEVELS.map((lv) => (
                   <PreviewCard key={lv} title={`Nível ${lv}`} subtitle={`${byLevel.find((b) => b.lv === lv)?.n ?? 0} questão(ões)`} image={selectedLevelPages[lv]?.page_data_url} emptyText="Sem página" muted={!selectedLevels.includes(lv)} />
                 ))}
@@ -303,7 +329,7 @@ function ExportPage() {
             <div className="text-xs text-muted-foreground mt-1 flex gap-4">
               {byLevel.map((b) => <span key={b.lv}>Nível {b.lv}: <strong>{b.n}</strong></span>)}
             </div>
-            <p className="mt-2 text-xs text-muted-foreground">Será gerado um único arquivo contendo os níveis selecionados.</p>
+            <p className="mt-2 text-xs text-muted-foreground">Será gerado um único arquivo contendo capa, Sobre nós, níveis selecionados, questões e gabaritos.</p>
           </CardContent>
         </Card>
 
