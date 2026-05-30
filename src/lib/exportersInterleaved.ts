@@ -47,6 +47,7 @@ type ExportOptions = {
   questions: QuestionRow[];
   includeAnswers: boolean;
   coverDataUrl?: string;
+  aboutPageDataUrls?: string[];
   questionBackgroundDataUrl?: string;
   answerBackgroundDataUrl?: string;
   levelPageDataUrls?: Record<number, string | undefined>;
@@ -122,6 +123,9 @@ async function loadLevelPages(opts: ExportOptions, levels: number[]) {
   }));
   return new Map<number, LoadedImage | null>(entries);
 }
+async function loadAboutPages(opts: ExportOptions) {
+  return Promise.all((opts.aboutPageDataUrls ?? []).filter(Boolean).map((source) => loadImageSource(source)));
+}
 function tableBorders(color: string) {
   return {
     top: { style: BorderStyle.SINGLE, size: 8, color }, bottom: { style: BorderStyle.SINGLE, size: 8, color },
@@ -138,14 +142,16 @@ function fullImageSection(image: LoadedImage) {
 
 export async function exportDocxInterleaved(opts: ExportOptions) {
   const groups = groupedByLevel(opts.questions);
-  const [bgQuestao, bgGabarito, cover] = await Promise.all([
+  const [bgQuestao, bgGabarito, cover, aboutPages] = await Promise.all([
     loadImageSource(opts.questionBackgroundDataUrl || BG_QUESTAO_URL),
     loadImageSource(opts.answerBackgroundDataUrl || BG_GABARITO_URL),
     opts.coverDataUrl ? loadImageSource(opts.coverDataUrl) : Promise.resolve(null),
+    loadAboutPages(opts),
   ]);
   const levelPages = await loadLevelPages(opts, groups.map((g) => g.level));
   const sections: any[] = [];
   if (cover) sections.push(fullImageSection(cover));
+  aboutPages.forEach((page) => sections.push(fullImageSection(page)));
 
   groups.forEach((group) => {
     const levelPage = levelPages.get(group.level);
@@ -192,10 +198,11 @@ export async function exportPdfInterleaved(opts: ExportOptions) {
   const pageW = 595.28;
   const pageH = 841.89;
   const groups = groupedByLevel(opts.questions);
-  const [bgQuestao, bgGabarito, cover] = await Promise.all([
+  const [bgQuestao, bgGabarito, cover, aboutPages] = await Promise.all([
     loadImageSource(opts.questionBackgroundDataUrl || BG_QUESTAO_URL),
     loadImageSource(opts.answerBackgroundDataUrl || BG_GABARITO_URL),
     opts.coverDataUrl ? loadImageSource(opts.coverDataUrl) : Promise.resolve(null),
+    loadAboutPages(opts),
   ]);
   const levelPages = await loadLevelPages(opts, groups.map((g) => g.level));
   const doc = new jsPDF({ unit: "pt", format: "a4" });
@@ -204,6 +211,7 @@ export async function exportPdfInterleaved(opts: ExportOptions) {
   const drawFullImage = (img: LoadedImage) => doc.addImage(img.dataUrl, img.pdfType, 0, 0, pageW, pageH, undefined, "FAST");
 
   if (cover) { usePage(); drawFullImage(cover); }
+  aboutPages.forEach((page) => { usePage(); drawFullImage(page); });
   groups.forEach((group) => {
     const levelPage = levelPages.get(group.level);
     if (levelPage) { usePage(); drawFullImage(levelPage); }
