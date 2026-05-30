@@ -54,6 +54,7 @@ type ExportOptions = {
   levelPageDataUrls?: Record<number, string | undefined>;
 };
 type LoadedImage = { bytes: Uint8Array; dataUrl: string; type: ImageType; pdfType: "PNG" | "JPEG" };
+type Rgb = [number, number, number];
 
 function cleanText(value: string | null | undefined) {
   return String(value ?? "")
@@ -190,7 +191,7 @@ function docxQuestionPromptBlock(q: QuestionRow): Table {
   const command = cleanInlineText(q.command);
   const children: Paragraph[] = [];
   if (intro) {
-    children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { line: 345 }, children: [new TextRun({ text: intro, size: 24, bold: true, color: NAVY_TEXT })] }));
+    children.push(new Paragraph({ alignment: AlignmentType.JUSTIFIED, spacing: { line: 345 }, children: [new TextRun({ text: intro, size: 24, bold: true, color: NAVY_TEXT })] }));
     children.push(new Paragraph({ spacing: { before: 110, after: 110 }, children: [new TextRun({ text: "" })] }));
   }
   children.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { line: 355 }, children: [new TextRun({ text: command, bold: true, size: 25, color: NAVY_TEXT })] }));
@@ -237,7 +238,11 @@ export async function exportPdfInterleaved(opts: ExportOptions) {
     group.questions.forEach((q, idx) => {
       const num = questionNumber(q, idx);
       usePage(); drawFullImage(bgQuestao); drawPdfQuestionContent(doc, q, num);
-      if (opts.includeAnswers) { usePage(); drawFullImage(bgGabarito); drawPdfAnswerContent(doc, q, num); }
+      if (opts.includeAnswers) {
+        usePage();
+        drawFullImage(bgGabarito);
+        drawPdfAnswerContent(doc, q, num, () => { usePage(); drawFullImage(bgGabarito); });
+      }
     });
   });
   doc.save(`${slug(opts.title)}.pdf`);
@@ -247,7 +252,7 @@ function splitPdfLines(doc: jsPDF, text: string, maxWidth: number, fontSize: num
   doc.setFontSize(fontSize);
   return doc.splitTextToSize(cleanInlineText(text), maxWidth) as string[];
 }
-function drawNotebookIcon(doc: jsPDF, x: number, y: number, color: [number, number, number]) {
+function drawNotebookIcon(doc: jsPDF, x: number, y: number, color: Rgb) {
   doc.setDrawColor(...color);
   doc.setLineWidth(1.2);
   doc.roundedRect(x + 3, y, 13, 16, 2, 2, "S");
@@ -265,12 +270,18 @@ function drawJustifiedLine(doc: jsPDF, line: string, x: number, y: number, maxWi
     return;
   }
   const wordsWidth = words.reduce((sum, word) => sum + doc.getTextWidth(word), 0);
-  const gap = (maxWidth - wordsWidth) / (words.length - 1);
+  const gap = Math.max(3, (maxWidth - wordsWidth) / (words.length - 1));
   let cursor = x;
   words.forEach((word) => {
     doc.text(word, cursor, y);
     cursor += doc.getTextWidth(word) + gap;
   });
+}
+function drawCenteredLines(doc: jsPDF, lines: string[], x: number, y: number, lineStep: number) {
+  lines.forEach((line, index) => doc.text(line, x, y + index * lineStep, { align: "center" }));
+}
+function drawJustifiedLines(doc: jsPDF, lines: string[], x: number, y: number, maxWidth: number, lineStep: number) {
+  lines.forEach((line, index) => drawJustifiedLine(doc, line, x, y + index * lineStep, maxWidth, index < lines.length - 1));
 }
 
 function drawPdfQuestionContent(doc: jsPDF, q: QuestionRow, num: number) {
@@ -279,11 +290,11 @@ function drawPdfQuestionContent(doc: jsPDF, q: QuestionRow, num: number) {
   const blockX = safe.left;
   const blockW = pageW - safe.left - safe.right;
   let y = safe.top;
-  const navy: [number, number, number] = [6, 36, 92];
-  const navyText: [number, number, number] = [7, 31, 99];
-  const gold: [number, number, number] = [255, 196, 0];
-  const borderBlue: [number, number, number] = [185, 215, 255];
-  const borderGray: [number, number, number] = [217, 230, 247];
+  const navy: Rgb = [6, 36, 92];
+  const navyText: Rgb = [7, 31, 99];
+  const gold: Rgb = [255, 196, 0];
+  const borderBlue: Rgb = [185, 215, 255];
+  const borderGray: Rgb = [217, 230, 247];
 
   doc.setFillColor(255,255,255); doc.setDrawColor(...borderBlue); doc.roundedRect(blockX, y, blockW, 42, 10, 10, "FD");
   doc.setFont("helvetica", "bold"); doc.setFontSize(14.8); doc.setTextColor(...navyText);
@@ -310,10 +321,10 @@ function drawPdfQuestionContent(doc: jsPDF, q: QuestionRow, num: number) {
   doc.setFont("helvetica", "bold"); doc.setFontSize(promptFontSize); doc.setTextColor(...navyText);
   let textY = y + Math.max(20, (promptH - totalTextH) / 2 + promptFontSize * 0.75);
   if (introLines.length) {
-    doc.text(introLines, pageW / 2, textY, { align: "center" });
+    drawJustifiedLines(doc, introLines, blockX + 12, textY, promptMaxW, lineStep);
     textY += introLines.length * lineStep + paragraphGap;
   }
-  if (commandLines.length) doc.text(commandLines, pageW / 2, textY, { align: "center" });
+  if (commandLines.length) drawCenteredLines(doc, commandLines, pageW / 2, textY, lineStep);
   y += promptH + 10;
 
   doc.setFillColor(248,251,255); doc.setDrawColor(...borderBlue); doc.roundedRect(blockX, y, blockW, 430, 10, 10, "FD");
@@ -330,8 +341,7 @@ function drawPdfQuestionContent(doc: jsPDF, q: QuestionRow, num: number) {
   });
 }
 
-function drawAnswerExplanation(doc: jsPDF, args: { label: string; body: string; x: number; y: number; maxWidth: number; fontSize: number; labelColor: [number, number, number]; bodyColor: [number, number, number]; maxLines: number }) {
-  const { label, body, x, y, maxWidth, fontSize, labelColor, bodyColor, maxLines } = args;
+function splitAnswerExplanation(doc: jsPDF, label: string, body: string, maxWidth: number, fontSize: number) {
   const cleanBody = cleanInlineText(body || "—");
   doc.setFont("helvetica", "bold");
   doc.setFontSize(fontSize);
@@ -343,8 +353,6 @@ function drawAnswerExplanation(doc: jsPDF, args: { label: string; body: string; 
   let currentMaxWidth = firstLineBodyWidth;
   words.forEach((word) => {
     const test = current ? `${current} ${word}` : word;
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(fontSize);
     if (doc.getTextWidth(test) <= currentMaxWidth || !current) {
       current = test;
       return;
@@ -354,56 +362,82 @@ function drawAnswerExplanation(doc: jsPDF, args: { label: string; body: string; 
     currentMaxWidth = maxWidth;
   });
   if (current) lines.push(current);
-  const visible = lines.slice(0, maxLines);
+  return { lines: lines.length ? lines : ["—"], labelWidth, firstLineBodyWidth, lineStep: fontSize + 2.4 };
+}
+function drawAnswerExplanation(doc: jsPDF, args: { label: string; lines: string[]; labelWidth: number; firstLineBodyWidth: number; x: number; y: number; maxWidth: number; fontSize: number; labelColor: Rgb; bodyColor: Rgb }) {
+  const { label, lines, labelWidth, firstLineBodyWidth, x, y, maxWidth, fontSize, labelColor, bodyColor } = args;
   const lineStep = fontSize + 2.4;
   doc.setFont("helvetica", "bold");
   doc.setFontSize(fontSize);
   doc.setTextColor(...labelColor);
   doc.text(label, x, y);
   doc.setTextColor(...bodyColor);
-  if (visible[0]) drawJustifiedLine(doc, visible[0], x + labelWidth, y, firstLineBodyWidth, visible.length > 1);
-  visible.slice(1).forEach((line, index) => drawJustifiedLine(doc, line, x, y + (index + 1) * lineStep, maxWidth, index < visible.length - 2));
-  return { lines: Math.max(1, visible.length), lineStep };
+  if (lines[0]) drawJustifiedLine(doc, lines[0], x + labelWidth, y, firstLineBodyWidth, lines.length > 1);
+  lines.slice(1).forEach((line, index) => drawJustifiedLine(doc, line, x, y + (index + 1) * lineStep, maxWidth, index < lines.length - 2));
 }
 
-function drawPdfAnswerContent(doc: jsPDF, q: QuestionRow, num: number) {
+function drawPdfAnswerContent(doc: jsPDF, q: QuestionRow, num: number, addContinuationPage?: () => void) {
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const safe = PDF_SAFE_ANSWER;
   const blockX = safe.left;
   const blockW = pageW - safe.left - safe.right;
-  let y = safe.top;
   const mainH = pageH - safe.top - safe.bottom;
-  const navy: [number, number, number] = [6, 36, 92];
-  const navyText: [number, number, number] = [7, 31, 99];
-  const green: [number, number, number] = [19, 138, 54];
-  const red: [number, number, number] = [227, 27, 27];
-  const borderBlue: [number, number, number] = [185, 215, 255];
-  const borderGray: [number, number, number] = [217, 230, 247];
-  const greenLight: [number, number, number] = [238, 248, 241];
+  const navy: Rgb = [6, 36, 92];
+  const navyText: Rgb = [7, 31, 99];
+  const green: Rgb = [19, 138, 54];
+  const red: Rgb = [227, 27, 27];
+  const borderBlue: Rgb = [185, 215, 255];
+  const borderGray: Rgb = [217, 230, 247];
+  const greenLight: Rgb = [238, 248, 241];
+  const greenBorder: Rgb = [199, 227, 207];
+  const answerFontSize = 10.8;
+  const maxTextW = blockW - 78;
+  const bottomLimit = pageH - safe.bottom - 14;
 
-  doc.setFillColor(255,255,255); doc.setDrawColor(...borderBlue); doc.roundedRect(blockX, y, blockW, mainH, 10, 10, "FD");
-  doc.setFont("helvetica", "bold"); doc.setFontSize(14.5); doc.setTextColor(...navyText); doc.text(`QUESTÃO ${num}`, pageW / 2, y + 32, { align: "center" });
-  const gabaritoBoxW = 122;
-  const gabaritoBoxX = blockX + blockW - gabaritoBoxW - 12;
-  doc.setFillColor(...navy); doc.roundedRect(gabaritoBoxX, y + 14, gabaritoBoxW, 29, 6, 6, "F");
-  doc.setFontSize(11.5); doc.setTextColor(255,255,255); doc.text("Gabarito:", gabaritoBoxX + 16, y + 34); doc.setFontSize(17.5); doc.setTextColor(...green); doc.text(q.correct, gabaritoBoxX + 96, y + 36);
-  y += 58;
-  doc.setFontSize(13); doc.setTextColor(...navyText); doc.text("Explicação das alternativas", pageW/2, y, { align: "center" });
-  y += 14;
+  let y = safe.top;
+  let isContinuation = false;
+
+  function drawFrame() {
+    y = safe.top;
+    doc.setFillColor(255,255,255); doc.setDrawColor(...borderBlue); doc.roundedRect(blockX, y, blockW, mainH, 10, 10, "FD");
+    doc.setFont("helvetica", "bold"); doc.setFontSize(14.5); doc.setTextColor(...navyText); doc.text(`QUESTÃO ${num}${isContinuation ? " — CONTINUAÇÃO" : ""}`, pageW / 2, y + 32, { align: "center" });
+    const gabaritoBoxW = 122;
+    const gabaritoBoxX = blockX + blockW - gabaritoBoxW - 12;
+    doc.setFillColor(...navy); doc.roundedRect(gabaritoBoxX, y + 14, gabaritoBoxW, 29, 6, 6, "F");
+    doc.setFontSize(11.5); doc.setTextColor(255,255,255); doc.text("Gabarito:", gabaritoBoxX + 16, y + 34);
+    doc.setFontSize(17.5); doc.setTextColor(...green); doc.text(q.correct, gabaritoBoxX + 96, y + 36);
+    y += 58;
+    doc.setFontSize(13); doc.setTextColor(...navyText); doc.text("Explicação das alternativas", pageW/2, y, { align: "center" });
+    y += 14;
+  }
+
+  drawFrame();
+
   letterAlternatives(q).forEach((alt) => {
     const isCorrect = alt.letter === q.correct;
     const label = isCorrect ? "Correta: " : "Incorreta: ";
-    const answerFontSize = 10.8;
-    const maxTextW = blockW - 78;
-    const estimatedLines = splitPdfLines(doc, `${label}${alt.exp || "—"}`, maxTextW, answerFontSize, "bold").slice(0, 6);
-    const h = Math.max(68, estimatedLines.length * 12.8 + 20);
-    doc.setFillColor(...(isCorrect ? greenLight : [255,255,255] as [number, number, number]));
-    doc.setDrawColor(...(isCorrect ? [199, 227, 207] as [number, number, number] : borderGray));
-    doc.roundedRect(blockX + 8, y, blockW - 16, h, 8, 8, "FD");
-    doc.setFillColor(...(isCorrect ? green : navy)); doc.circle(blockX + 34, y + 22, 16, "F");
-    doc.setFont("helvetica", "bold"); doc.setFontSize(18.5); doc.setTextColor(255,255,255); doc.text(alt.letter, blockX + 34, y + 28, { align: "center" });
-    drawAnswerExplanation(doc, { label, body: alt.exp || "—", x: blockX + 58, y: y + 20, maxWidth: maxTextW, fontSize: answerFontSize, labelColor: isCorrect ? green : red, bodyColor: navyText, maxLines: 6 });
-    y += h + 6;
+    const split = splitAnswerExplanation(doc, label, alt.exp || "—", maxTextW, answerFontSize);
+    const cardH = Math.max(68, split.lines.length * split.lineStep + 24);
+
+    if (y + cardH > bottomLimit && addContinuationPage) {
+      addContinuationPage();
+      isContinuation = true;
+      drawFrame();
+    }
+
+    const fillColor = isCorrect ? greenLight : [255, 255, 255] as Rgb;
+    const strokeColor = isCorrect ? greenBorder : borderGray;
+    doc.setFillColor(...fillColor);
+    doc.setDrawColor(...strokeColor);
+    doc.roundedRect(blockX + 8, y, blockW - 16, cardH, 8, 8, "FD");
+    doc.setFillColor(...(isCorrect ? green : navy));
+    doc.circle(blockX + 34, y + 22, 16, "F");
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18.5);
+    doc.setTextColor(255,255,255);
+    doc.text(alt.letter, blockX + 34, y + 28, { align: "center" });
+    drawAnswerExplanation(doc, { label, lines: split.lines, labelWidth: split.labelWidth, firstLineBodyWidth: split.firstLineBodyWidth, x: blockX + 58, y: y + 20, maxWidth: maxTextW, fontSize: answerFontSize, labelColor: isCorrect ? green : red, bodyColor: navyText });
+    y += cardH + 6;
   });
 }
