@@ -25,7 +25,7 @@ const NAVY = "0B1E4D";
 const NAVY_TEXT = "071F63";
 const GOLD = "F2C300";
 const GREEN = "138A36";
-const GREEN_LIGHT = "EEF8F1";
+const GREEN_LIGHT = "D6F0DD";
 const RED = "E31B1B";
 const BORDER_BLUE = "B9D7FF";
 const BORDER_GRAY = "D9E6F7";
@@ -196,7 +196,7 @@ function docxAnswerMainBlock(q: QuestionRow, num: number): Table {
   return new Table({ width: { size: 98, type: WidthType.PERCENTAGE }, alignment: AlignmentType.CENTER, borders: tableBorders(BORDER_BLUE), rows: [new TableRow({ children: [new TableCell({ verticalAlign: VerticalAlign.TOP, margins: { top: 95, bottom: 95, left: 100, right: 100 }, borders: tableBorders(BORDER_BLUE), shading: { fill: WHITE }, children: [new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 40 }, children: [new TextRun({ text: `QUESTÃO ${num}`, bold: true, size: 21, color: NAVY_TEXT })] }), new Paragraph({ alignment: AlignmentType.RIGHT, spacing: { after: 65 }, children: [new TextRun({ text: "Gabarito: ", bold: true, size: 19, color: NAVY_TEXT }), new TextRun({ text: q.correct, bold: true, size: 23, color: GREEN })] }), new Paragraph({ alignment: AlignmentType.CENTER, spacing: { before: 35, after: 65 }, children: [new TextRun({ text: "Explicação das alternativas", bold: true, size: 21, color: NAVY_TEXT })] }), ...letterAlternatives(q).map((alt) => docxAnswerAlternativeCard(alt, alt.letter === q.correct))] })] })] });
 }
 function docxAnswerAlternativeCard(alt: { letter: string; exp: string | null }, isCorrect: boolean): Table {
-  return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, borders: tableBorders(isCorrect ? "C7E3CF" : BORDER_GRAY), rows: [new TableRow({ children: [new TableCell({ width: { size: 8, type: WidthType.PERCENTAGE }, verticalAlign: VerticalAlign.TOP, shading: { fill: isCorrect ? GREEN : NAVY }, margins: { top: 62, bottom: 62, left: 50, right: 50 }, borders: tableBorders(isCorrect ? GREEN : NAVY), children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: alt.letter, bold: true, color: isCorrect ? WHITE : GOLD, size: 23 })] })] }), new TableCell({ width: { size: 92, type: WidthType.PERCENTAGE }, verticalAlign: VerticalAlign.TOP, shading: { fill: isCorrect ? GREEN_LIGHT : WHITE }, margins: { top: 62, bottom: 62, left: 65, right: 65 }, borders: tableBorders(isCorrect ? "C7E3CF" : BORDER_GRAY), children: [new Paragraph({ alignment: AlignmentType.JUSTIFIED, spacing: { line: 315 }, children: [new TextRun({ text: isCorrect ? "Correta: " : "Incorreta: ", bold: true, color: isCorrect ? GREEN : RED, size: 21 }), new TextRun({ text: alt.exp || "—", bold: true, color: NAVY_TEXT, size: 21 })] })] })] })] });
+  return new Table({ width: { size: 100, type: WidthType.PERCENTAGE }, borders: tableBorders(isCorrect ? "8FD19E" : BORDER_GRAY), rows: [new TableRow({ children: [new TableCell({ width: { size: 8, type: WidthType.PERCENTAGE }, verticalAlign: VerticalAlign.TOP, shading: { fill: isCorrect ? GREEN : NAVY }, margins: { top: 62, bottom: 62, left: 50, right: 50 }, borders: tableBorders(isCorrect ? GREEN : NAVY), children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: alt.letter, bold: true, color: isCorrect ? WHITE : GOLD, size: 23 })] })] }), new TableCell({ width: { size: 92, type: WidthType.PERCENTAGE }, verticalAlign: VerticalAlign.TOP, shading: { fill: isCorrect ? GREEN_LIGHT : WHITE }, margins: { top: 62, bottom: 62, left: 65, right: 65 }, borders: tableBorders(isCorrect ? "8FD19E" : BORDER_GRAY), children: [new Paragraph({ alignment: AlignmentType.JUSTIFIED, spacing: { line: 315 }, children: [new TextRun({ text: isCorrect ? "Correta: " : "Incorreta: ", bold: true, color: isCorrect ? GREEN : RED, size: 21 }), new TextRun({ text: alt.exp || "—", bold: true, color: NAVY_TEXT, size: 21 })] })] })] })] });
 }
 
 export async function exportPdfInterleaved(opts: ExportOptions) {
@@ -413,7 +413,7 @@ function drawAnswerPageHeaderText(doc: jsPDF, q: QuestionRow, num: number, metri
   return frame.y + 72;
 }
 function drawAnswerCard(doc: jsPDF, alt: AnswerLayout, y: number, blockX: number, blockW: number, metrics: AnswerMetrics) {
-  const navy: Rgb = [6, 36, 92]; const navyText: Rgb = [7, 31, 99]; const green: Rgb = [19, 138, 54]; const red: Rgb = [227, 27, 27]; const borderGray: Rgb = [217, 230, 247]; const greenLight: Rgb = [238, 248, 241]; const greenBorder: Rgb = [199, 227, 207];
+  const navy: Rgb = [6, 36, 92]; const navyText: Rgb = [7, 31, 99]; const green: Rgb = [19, 138, 54]; const red: Rgb = [227, 27, 27]; const borderGray: Rgb = [217, 230, 247]; const greenLight: Rgb = [214, 240, 221]; const greenBorder: Rgb = [143, 209, 158];
   const fillColor = alt.isCorrect ? greenLight : [255, 255, 255] as Rgb; const strokeColor = alt.isCorrect ? greenBorder : borderGray;
   doc.setFillColor(...fillColor); doc.setDrawColor(...strokeColor); doc.roundedRect(blockX + 8, y, blockW - 16, alt.h, 8, 8, "FD");
   doc.setFillColor(...(alt.isCorrect ? green : navy)); doc.circle(blockX + 34, y + 22, 16 * metrics.scale, "F");
