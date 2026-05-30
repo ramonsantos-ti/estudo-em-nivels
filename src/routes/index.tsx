@@ -1,13 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { AppShell } from "@/components/AppShell";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Trash2, Plus, BookOpen } from "lucide-react";
+import { Trash2, Plus, BookOpen, Search, X } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/")({
@@ -15,10 +15,19 @@ export const Route = createFileRoute("/")({
   component: ThemesPage,
 });
 
+function normalizeSearch(value: string) {
+  return String(value ?? "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim();
+}
+
 function ThemesPage() {
   const qc = useQueryClient();
   const [name, setName] = useState("");
   const [desc, setDesc] = useState("");
+  const [searchTerm, setSearchTerm] = useState("");
 
   const themes = useQuery({
     queryKey: ["themes"],
@@ -31,6 +40,18 @@ function ThemesPage() {
       return data;
     },
   });
+
+  const filteredThemes = useMemo(() => {
+    const term = normalizeSearch(searchTerm);
+    if (!term) return themes.data ?? [];
+
+    return (themes.data ?? []).filter((theme: any) => {
+      const themeName = normalizeSearch(theme.name);
+      const themeDescription = normalizeSearch(theme.description);
+      const subthemesText = normalizeSearch((theme.subthemes ?? []).map((subtheme: any) => subtheme.name).join(" "));
+      return themeName.includes(term) || themeDescription.includes(term) || subthemesText.includes(term);
+    });
+  }, [themes.data, searchTerm]);
 
   const addTheme = useMutation({
     mutationFn: async () => {
@@ -74,12 +95,45 @@ function ThemesPage() {
         </Card>
 
         <div className="space-y-4">
-          <h2 className="text-2xl font-bold text-primary">Temas cadastrados</h2>
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-primary">Temas cadastrados</h2>
+              <p className="text-sm text-muted-foreground">
+                {filteredThemes.length} de {themes.data?.length ?? 0} tema(s) exibido(s)
+              </p>
+            </div>
+            <div className="w-full lg:max-w-md">
+              <label className="text-sm font-medium text-primary">Pesquisar</label>
+              <div className="relative mt-1">
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={searchTerm}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                  placeholder="Pesquisar por tema, subtema ou descrição"
+                  className="pl-9 pr-9"
+                />
+                {searchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setSearchTerm("")}
+                    className="absolute right-2 top-1/2 rounded p-1 -translate-y-1/2 text-muted-foreground hover:bg-muted"
+                    title="Limpar pesquisa"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+
           {themes.isLoading && <p className="text-muted-foreground">Carregando...</p>}
           {themes.data?.length === 0 && (
             <Card><CardContent className="py-12 text-center text-muted-foreground">Nenhum tema ainda. Crie o primeiro!</CardContent></Card>
           )}
-          {themes.data?.map((t: any) => (
+          {!themes.isLoading && themes.data && themes.data.length > 0 && filteredThemes.length === 0 && (
+            <Card><CardContent className="py-12 text-center text-muted-foreground">Nenhum tema encontrado para a pesquisa informada.</CardContent></Card>
+          )}
+          {filteredThemes.map((t: any) => (
             <Card key={t.id} className="border-l-4 border-l-secondary">
               <CardContent className="py-4 flex items-start justify-between gap-4">
                 <div className="flex-1">
