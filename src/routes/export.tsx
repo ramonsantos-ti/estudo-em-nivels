@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { exportDocxInterleaved, exportPdfInterleaved } from "@/lib/exportersInterleaved";
-import { FileText, FileDown, X } from "lucide-react";
+import { FileText, FileDown, GripVertical, X } from "lucide-react";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/export")({
@@ -33,6 +33,7 @@ function ExportPage() {
   const [subthemeId, setSubthemeId] = useState<string>("all");
   const [selectedLevels, setSelectedLevels] = useState<number[]>([1, 2, 3, 4]);
   const [selectedAboutPageIds, setSelectedAboutPageIds] = useState<string[]>([]);
+  const [draggingAboutPageId, setDraggingAboutPageId] = useState<string | null>(null);
   const [includeAnswers, setIncludeAnswers] = useState(true);
   const [busy, setBusy] = useState<null | "docx" | "pdf">(null);
   const [tempCover, setTempCover] = useState<TempCover | null>(null);
@@ -88,6 +89,11 @@ function ExportPage() {
     },
   });
 
+  useEffect(() => {
+    const validIds = new Set((aboutPages.data ?? []).map((page) => page.id));
+    setSelectedAboutPageIds((current) => current.filter((id) => validIds.has(id)));
+  }, [aboutPages.data]);
+
   const selectedNotebook = useMemo(() => notebooks.data?.find((item) => item.id === notebookId) ?? null, [notebooks.data, notebookId]);
   const selectedTheme = useMemo(() => themes.data?.find((t: any) => t.id === themeId), [themes.data, themeId]);
 
@@ -109,8 +115,8 @@ function ExportPage() {
   }, [levelPageSelections, levelPagesByLevel]);
 
   const selectedAboutPages = useMemo(() => {
-    const idSet = new Set(selectedAboutPageIds);
-    return (aboutPages.data ?? []).filter((page) => idSet.has(page.id));
+    const pageMap = new Map((aboutPages.data ?? []).map((page) => [page.id, page]));
+    return selectedAboutPageIds.map((id) => pageMap.get(id)).filter(Boolean) as AboutPageModel[];
   }, [aboutPages.data, selectedAboutPageIds]);
 
   const availableSubthemes = useMemo(() => {
@@ -157,7 +163,36 @@ function ExportPage() {
   }
 
   function toggleAboutPage(id: string, checked: boolean) {
-    setSelectedAboutPageIds((current) => checked ? [...current, id] : current.filter((item) => item !== id));
+    setSelectedAboutPageIds((current) => {
+      if (checked) return current.includes(id) ? current : [...current, id];
+      return current.filter((item) => item !== id);
+    });
+  }
+
+  function moveAboutPage(activeId: string, overId: string) {
+    if (activeId === overId) return;
+    setSelectedAboutPageIds((current) => {
+      const from = current.indexOf(activeId);
+      const to = current.indexOf(overId);
+      if (from < 0 || to < 0) return current;
+      const next = [...current];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  }
+
+  function handleAboutDragStart(event: React.DragEvent<HTMLDivElement>, id: string) {
+    setDraggingAboutPageId(id);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", id);
+  }
+
+  function handleAboutDrop(event: React.DragEvent<HTMLDivElement>, overId: string) {
+    event.preventDefault();
+    const activeId = event.dataTransfer.getData("text/plain") || draggingAboutPageId;
+    if (activeId) moveAboutPage(activeId, overId);
+    setDraggingAboutPageId(null);
   }
 
   async function handle(format: "docx" | "pdf") {
@@ -241,6 +276,39 @@ function ExportPage() {
                 </div>
               </div>
               <p className="mt-1 text-xs text-muted-foreground">As páginas selecionadas entram após a capa e antes da primeira página de nível.</p>
+
+              {selectedAboutPages.length > 0 && (
+                <div className="mt-3 rounded-md border bg-background/70 p-3">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div>
+                      <div className="text-sm font-medium text-primary">Ordem das páginas selecionadas</div>
+                      <div className="text-xs text-muted-foreground">Arraste os itens para reorganizar a ordem de entrada na exportação.</div>
+                    </div>
+                    <Button type="button" size="sm" variant="outline" onClick={() => setSelectedAboutPageIds([])}>Limpar seleção</Button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {selectedAboutPages.map((page, index) => (
+                      <div
+                        key={page.id}
+                        draggable
+                        onDragStart={(event) => handleAboutDragStart(event, page.id)}
+                        onDragOver={(event) => event.preventDefault()}
+                        onDrop={(event) => handleAboutDrop(event, page.id)}
+                        onDragEnd={() => setDraggingAboutPageId(null)}
+                        className={`flex min-w-56 cursor-move items-center gap-2 rounded-md border bg-white p-2 text-sm shadow-sm transition ${draggingAboutPageId === page.id ? "opacity-50 ring-2 ring-secondary" : "hover:border-primary"}`}
+                        title="Arraste para alterar a ordem"
+                      >
+                        <GripVertical className="h-4 w-4 shrink-0 text-muted-foreground" />
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">{index + 1}</span>
+                        <span className="line-clamp-1 flex-1 font-medium text-primary">{page.name}</span>
+                        <button type="button" onClick={() => toggleAboutPage(page.id, false)} className="rounded p-1 hover:bg-muted" title="Remover da exportação">
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div>
@@ -312,7 +380,7 @@ function ExportPage() {
             <div className="overflow-x-auto rounded-md border bg-muted/20 p-3">
               <div className="flex min-w-max gap-3">
                 <PreviewCard title="Capa" subtitle={tempCover?.name ?? "Nenhuma"} image={tempCover?.dataUrl} emptyText="Sem capa" onClear={tempCover ? clearTempCover : undefined} />
-                {selectedAboutPages.map((page) => <PreviewCard key={page.id} title="Sobre nós" subtitle={page.name} image={page.page_data_url} emptyText="Sem página" />)}
+                {selectedAboutPages.map((page, index) => <PreviewCard key={page.id} title={`Sobre nós ${index + 1}`} subtitle={page.name} image={page.page_data_url} emptyText="Sem página" />)}
                 {LEVELS.map((lv) => (
                   <PreviewCard key={lv} title={`Nível ${lv}`} subtitle={`${byLevel.find((b) => b.lv === lv)?.n ?? 0} questão(ões)`} image={selectedLevelPages[lv]?.page_data_url} emptyText="Sem página" muted={!selectedLevels.includes(lv)} />
                 ))}
