@@ -77,7 +77,7 @@ function QuestionsListPage() {
     mutationFn: async () => {
       if (!editingId || !form) return;
       const payload = { theme_id: form.theme_id, subtheme_id: form.subtheme_id || null, level: form.level, number: form.number ? parseInt(form.number) : null, intro: form.intro || null, command: form.command, alt_a: form.alt_a, alt_b: form.alt_b, alt_c: form.alt_c, alt_d: form.alt_d, alt_e: form.alt_e, correct: form.correct, exp_a: form.exp_a || null, exp_b: form.exp_b || null, exp_c: form.exp_c || null, exp_d: form.exp_d || null, exp_e: form.exp_e || null, updated_until: todayISODate() };
-      const { error } = await supabase.from("questions").update(payload).eq("id", editingId);
+      const { error } = await (supabase as any).from("questions").update(payload).eq("id", editingId);
       if (error) throw error;
     },
     onSuccess: () => { toast.success("Questão atualizada"); setEditingId(null); setForm(null); qc.invalidateQueries({ queryKey: ["questions-list"] }); qc.invalidateQueries({ queryKey: ["questions"] }); },
