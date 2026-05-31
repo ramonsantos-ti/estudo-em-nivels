@@ -14,6 +14,33 @@ export type Database = {
   }
   public: {
     Tables: {
+      about_pages: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          page_data_url: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          page_data_url: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          page_data_url?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
       cover_models: {
         Row: {
           created_at: string
@@ -91,6 +118,74 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      programmatic_contents: {
+        Row: {
+          created_at: string
+          description: string | null
+          id: string
+          name: string
+          subtheme_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name: string
+          subtheme_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          description?: string | null
+          id?: string
+          name?: string
+          subtheme_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "programmatic_contents_subtheme_id_fkey"
+            columns: ["subtheme_id"]
+            isOneToOne: false
+            referencedRelation: "subthemes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      question_programmatic_contents: {
+        Row: {
+          content_id: string
+          created_at: string
+          question_id: string
+        }
+        Insert: {
+          content_id: string
+          created_at?: string
+          question_id: string
+        }
+        Update: {
+          content_id?: string
+          created_at?: string
+          question_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "question_programmatic_contents_content_id_fkey"
+            columns: ["content_id"]
+            isOneToOne: false
+            referencedRelation: "programmatic_contents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "question_programmatic_contents_question_id_fkey"
+            columns: ["question_id"]
+            isOneToOne: false
+            referencedRelation: "questions"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       questions: {
         Row: {
