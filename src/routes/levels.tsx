@@ -10,6 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Edit, Save, Trash2, UploadCloud, X } from "lucide-react";
 import { toast } from "sonner";
+import { uploadImageFile, deleteImageByUrl } from "@/lib/storage-uploads";
 
 export const Route = createFileRoute("/levels")({
   head: () => ({ meta: [{ title: "Níveis — Questão de Sucesso" }] }),
@@ -95,8 +96,10 @@ function LevelsPage() {
 
   const deletePage = useMutation({
     mutationFn: async (id: string) => {
+      const target = pages.find((p) => p.id === id);
       const { error } = await (supabase as any).from("level_pages").delete().eq("id", id);
       if (error) throw error;
+      await deleteImageByUrl(target?.page_data_url);
     },
     onSuccess: async (_, deletedId) => {
       qc.setQueryData<LevelPage[]>(LEVEL_PAGES_QUERY_KEY, (current = []) => current.filter((item) => item.id !== deletedId));
@@ -134,7 +137,8 @@ function LevelsPage() {
       return;
     }
     try {
-      setPageImage(await fileToCompressedDataUrl(file));
+      const url = await uploadImageFile(file, "level_pages");
+      setPageImage(url);
       setFileName(file.name);
       if (!name.trim()) setName(file.name.replace(/\.[^.]+$/, ""));
       toast.success("Imagem carregada. Confira a pré-visualização antes de salvar.");
@@ -278,34 +282,3 @@ function LevelsPage() {
   );
 }
 
-async function fileToCompressedDataUrl(file: File) {
-  const source = await fileToDataUrl(file);
-  const img = await loadImage(source);
-  const maxW = 1200;
-  const scale = Math.min(1, maxW / img.width);
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(img.width * scale);
-  canvas.height = Math.round(img.height * scale);
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Não foi possível processar a imagem.");
-  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.84);
-}
-
-function fileToDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("Não foi possível ler a imagem."));
-    reader.readAsDataURL(file);
-  });
-}
-
-function loadImage(src: string) {
-  return new Promise<HTMLImageElement>((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => resolve(img);
-    img.onerror = () => reject(new Error("Não foi possível carregar a imagem."));
-    img.src = src;
-  });
-}
