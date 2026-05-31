@@ -12,6 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Copy, Download, Lock, Plus, Save, Send, Trash2, Type, Unlock, UploadCloud, X } from "lucide-react";
 import { toast } from "sonner";
 import jsPDF from "jspdf";
+import { uploadImageFile, deleteImageByUrl } from "@/lib/storage-uploads";
 
 type CoverModel = { id: string; name: string; image_data_url: string; created_at?: string };
 type TextAlign = "left" | "center" | "right";
@@ -163,8 +164,10 @@ function CoversPage() {
 
   const deleteModel = useMutation({
     mutationFn: async (id: string) => {
+      const target = models.find((m) => m.id === id);
       const { error } = await (supabase as any).from("cover_models").delete().eq("id", id);
       if (error) throw error;
+      await deleteImageByUrl(target?.image_data_url);
     },
     onSuccess: async (_, deletedId) => {
       qc.setQueryData<CoverModel[]>(COVER_MODELS_QUERY_KEY, (current = []) => current.filter((model) => model.id !== deletedId));
@@ -182,7 +185,7 @@ function CoversPage() {
       return;
     }
     try {
-      const imageDataUrl = await fileToCompressedDataUrl(file);
+      const imageDataUrl = await uploadImageFile(file, "cover_models");
       const name = file.name.replace(/\.[^.]+$/, "") || "Modelo de capa";
       setPendingImage(imageDataUrl);
       setPendingFileName(name);
@@ -461,30 +464,10 @@ function FieldNumber({ label, value, onChange, step = 1, min, max }: { label: st
 function FieldColor({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
   return <div><Label>{label}</Label><Input type="color" value={value} onChange={(e) => onChange(e.target.value)} /></div>;
 }
-async function fileToCompressedDataUrl(file: File) {
-  const source = await fileToDataUrl(file);
-  const img = await loadImage(source);
-  const maxW = 1200;
-  const scale = Math.min(1, maxW / img.width);
-  const canvas = document.createElement("canvas");
-  canvas.width = Math.round(img.width * scale);
-  canvas.height = Math.round(img.height * scale);
-  const ctx = canvas.getContext("2d");
-  if (!ctx) throw new Error("Não foi possível processar a imagem.");
-  ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.82);
-}
-function fileToDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("Não foi possível ler a imagem."));
-    reader.readAsDataURL(file);
-  });
-}
 function loadImage(src: string) {
   return new Promise<HTMLImageElement>((resolve, reject) => {
     const img = new Image();
+    img.crossOrigin = "anonymous";
     img.onload = () => resolve(img);
     img.onerror = () => reject(new Error("Não foi possível carregar a imagem."));
     img.src = src;
